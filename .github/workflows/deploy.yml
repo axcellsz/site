@@ -14,10 +14,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Setup Node (use Node 20 for wrangler v4)
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
 
       - name: Install Wrangler v4 (global)
         run: |
@@ -55,7 +55,6 @@ jobs:
           cd "$PAGES_DIR"
 
           echo "Uploading files from $(pwd) to KV namespace $PAGES_KV_ID using wrangler v4"
-          # Upload each file; use --path to point to file contents
           find . -type f | while read -r f; do
             key="${f#./}"
             echo "Uploading $f -> $key"
