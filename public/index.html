@@ -1,1 +1,33 @@
 
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Beranda — My Site</title>
+<style>
+  body{font-family:system-ui,Segoe UI,Roboto,Arial;background:#f3f6fb;margin:0;padding:32px;display:flex;justify-content:center}
+  .card{max-width:900px;width:100%;background:#fff;border-radius:12px;padding:28px;box-shadow:0 8px 30px rgba(2,6,23,0.06)}
+  h1{margin:0 0 8px} p{color:#555}
+  .row{display:flex;gap:12px;margin-top:18px}
+  a.btn{background:#2563eb;color:#fff;padding:10px 14px;border-radius:8px;text-decoration:none}
+  .muted{color:#7b7f88;margin-top:12px}
+</style>
+</head>
+<body>
+  <main class="card">
+    <h1>Selamat datang</h1>
+    <p>Ini adalah contoh situs sederhana yang memakai Cloudflare Worker + KV untuk auth.</p>
+
+    <div class="row">
+      <a class="btn" href="/register.html">Daftar</a>
+      <a class="btn" href="/login.html">Login</a>
+      <a class="btn" href="/admin.html">Admin</a>
+    </div>
+
+    <div class="muted">
+      <p>Untuk melihat profil saat sudah login, klik <strong>Login</strong> lalu coba tombol <em>Check /me</em> pada halaman login.</p>
+    </div>
+  </main>
+</body>
+</html>
