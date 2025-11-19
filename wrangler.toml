@@ -1,0 +1,5 @@
+name = "site"        # ganti sesuai nama worker
+type = "javascript"
+account_id = "2be8757c27accc0e32b2e7b191dab316"   # ganti dengan Account ID Cloudflare-mu
+workers_dev = true
+compatibility_date = "2025-11-19"  # pakai tanggal sekarang jika mau
