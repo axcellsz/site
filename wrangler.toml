@@ -1,8 +1,11 @@
-name = "site"   
+name = "site"
 main = "worker.js"
-account_id = "2be8757c27accc0e32b2e7b191dab316"   # ganti dengan Account ID Cloudflare-mu
+account_id = "2be8757c27accc0e32b2e7b191dab316"
 workers_dev = true
-compatibility_date = "2025-11-19"  # pakai tanggal sekarang jika mau
+compatibility_date = "2025-11-19"
+
+# existing KV for users
 kv_namespaces = [
-  { binding = "MY_KV", id = "80f98e3382664639805b1df4f25e6a62" }
+  { binding = "MY_KV", id = "80f98e3382664639805b1df4f25e6a62" },
+  { binding = "PAGES_KV", id = "595c0be890a74dcb98f921fe7a3ce274" }
 ]
