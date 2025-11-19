@@ -1,4 +1,5 @@
-name = "site"        # ganti sesuai nama worker
+name = "site"   
+main = "worker.js"
 type = "javascript"
 account_id = "2be8757c27accc0e32b2e7b191dab316"   # ganti dengan Account ID Cloudflare-mu
 workers_dev = true
