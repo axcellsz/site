@@ -1,4 +1,4 @@
-name: Deploy Worker + Upload Pages KV
+name: Deploy Worker + Upload KV Pages
 
 on:
   push:
@@ -7,34 +7,32 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 18
 
-      - name: Install Wrangler v4
-        run: npm install -g wrangler@4
+      - name: Install Wrangler v3 (LANCAR)
+        run: npm install -g wrangler@3
 
-      - name: Upload all files in /public to KV
+      - name: Upload static files to KV
         run: |
           set -euo pipefail
-
-          echo "Uploading files using Wrangler v4..."
-
-          for f in $(find public -type f); do
-            key="${f#public/}"
-            echo "Uploading $key"
-            wrangler kv key put "$key" --binding PAGES_KV --path "$f"
+          cd public
+          for f in $(find . -type f); do
+            key="${f#./}"
+            echo "Uploading $f -> $key"
+            wrangler kv:key put --namespace-id "${{ secrets.PAGES_KV_ID }}" "$key" --path "$f"
           done
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
       - name: Deploy Worker
         run: wrangler deploy
         env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
