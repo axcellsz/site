@@ -1,4 +1,4 @@
-name: Deploy Worker + Upload Pages KV
+name: Deploy Worker + Upload Pages KV (via API)
 
 on:
   push:
@@ -20,32 +20,22 @@ jobs:
           node-version: 20
 
       - name: Install Wrangler v4 (global)
-        run: |
-          npm install -g wrangler@4
+        run: npm install -g wrangler@4
 
-      - name: Upload public files to Pages_KV
-        env:
-          PAGES_KV_ID: ${{ secrets.PAGES_KV_ID }}
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+      - name: Validate required secrets
         run: |
           set -euo pipefail
+          : "${CLOUDFLARE_API_TOKEN:?Set secret CLOUDFLARE_API_TOKEN in repo settings}"
+          : "${PAGES_KV_ID:?Set secret PAGES_KV_ID in repo settings}"
+          : "${CLOUDFLARE_ACCOUNT_ID:?Set secret CLOUDFLARE_ACCOUNT_ID in repo settings}"
 
-          # fallback to CF_API_TOKEN if CLOUDFLARE_API_TOKEN not provided
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] && [ -n "${CF_API_TOKEN:-}" ]; then
-            echo "CLOUDFLARE_API_TOKEN not set, falling back to CF_API_TOKEN"
-            export CLOUDFLARE_API_TOKEN="$CF_API_TOKEN"
-          fi
-
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo "ERROR: No Cloudflare API token found. Set secret CLOUDFLARE_API_TOKEN (preferred) or CF_API_TOKEN (fallback)." >&2
-            exit 1
-          fi
-
-          if [ -z "${PAGES_KV_ID:-}" ]; then
-            echo "ERROR: PAGES_KV_ID secret not set." >&2
-            exit 1
-          fi
+      - name: Upload public files to Pages_KV (via Cloudflare HTTP API)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PAGES_KV_ID: ${{ secrets.PAGES_KV_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
 
           if [ ! -d "$PAGES_DIR" ]; then
             echo "No $PAGES_DIR directory, skipping upload"
@@ -54,24 +44,53 @@ jobs:
 
           cd "$PAGES_DIR"
 
-          echo "Uploading files from $(pwd) to KV namespace $PAGES_KV_ID using wrangler v4"
+          # iterate files and PUT them to the KV namespace via Cloudflare API
           find . -type f | while read -r f; do
             key="${f#./}"
             echo "Uploading $f -> $key"
-            wrangler kv:key put --namespace-id "$PAGES_KV_ID" "$key" --path "$f"
+
+            # detect content-type (basic)
+            ext="${key##*.}"
+            case "$ext" in
+              html) ct="text/html; charset=utf-8" ;;
+              css) ct="text/css" ;;
+              js) ct="application/javascript" ;;
+              json) ct="application/json" ;;
+              svg) ct="image/svg+xml" ;;
+              png) ct="image/png" ;;
+              jpg|jpeg) ct="image/jpeg" ;;
+              webp) ct="image/webp" ;;
+              ico) ct="image/x-icon" ;;
+              *) ct="application/octet-stream" ;;
+            esac
+
+            # Use Cloudflare Account-level API to put KV value
+            # PUT /accounts/:account_id/storage/kv/namespaces/:namespace_id/values/:key
+            curl -sS -X PUT "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/storage/kv/namespaces/${PAGES_KV_ID}/values/${key}" \
+              -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+              -H "Content-Type: ${ct}" \
+              --data-binary @"${f}" \
+              -o /tmp/cf-upload-response.json -w "\nHTTP_STATUS:%{http_code}\n"
+
+            http_status=$(tail -n1 /tmp/cf-upload-response.json | sed -n 's/HTTP_STATUS://p' || true)
+            # The curl -w wrote http status to stdout; the body is in file: we check last line
+            if [ "$http_status" = "" ]; then
+              # Fallback: inspect the file content for success flag
+              ok=$(jq -r '.success // false' /tmp/cf-upload-response.json 2>/dev/null || echo "false")
+            else
+              ok=$(jq -r '.success // false' /tmp/cf-upload-response.json 2>/dev/null || echo "false")
+            fi
+
+            if [ "$ok" != "true" ]; then
+              echo "Upload failed for $key. Response:"
+              cat /tmp/cf-upload-response.json || true
+              exit 1
+            fi
           done
 
-      - name: Publish Worker (wrangler v4)
+      - name: Publish Worker (wrangler deploy)
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] && [ -n "${CF_API_TOKEN:-}" ]; then
-            export CLOUDFLARE_API_TOKEN="$CF_API_TOKEN"
-          fi
-          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
-            echo "ERROR: No Cloudflare API token found. Set secret CLOUDFLARE_API_TOKEN (preferred) or CF_API_TOKEN (fallback)." >&2
-            exit 1
-          fi
           wrangler deploy
