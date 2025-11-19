@@ -1,22 +1,22 @@
-// Updated handleLogin supporting JSON OR form-urlencoded bodies (no JS required)
+// Updated handleLogin — safe (no await inside non-async callback)
 async function handleLogin(req) {
   // Accept JSON or form-urlencoded
   let body = {};
   const ct = (req.headers.get("Content-Type") || "").split(";")[0].trim();
 
   if (ct === "application/json") {
-    body = await req.json().catch(()=>({}));
+    body = await req.json().catch(() => ({}));
   } else if (ct === "application/x-www-form-urlencoded") {
-    const text = await req.text().catch(()=>"");
-    // parse urlencoded
+    const text = await req.text().catch(() => "");
     body = Object.fromEntries(new URLSearchParams(text));
   } else {
-    // try json fallback
-    body = await req.json().catch(()=>{ 
-      // as last resort parse text as querystring
-      const t = (await req.text().catch(()=>""));
-      return Object.fromEntries(new URLSearchParams(t));
-    });
+    // try json fallback, then fallback to urlencoded parsing
+    try {
+      body = await req.json();
+    } catch (e) {
+      const text = await req.text().catch(() => "");
+      body = Object.fromEntries(new URLSearchParams(text));
+    }
   }
 
   const username = (body.username || "").trim();
@@ -36,14 +36,12 @@ async function handleLogin(req) {
 
   const cookie = `session=${token}; HttpOnly; Path=/; Max-Age=${ttl}; SameSite=Lax; Secure`;
   
-  // If request comes from a browser form submit (no JS), we should redirect after login.
-  // We detect HTML form by checking Accept header includes text/html and Content-Type is form.
+  // detect HTML form submit -> redirect
   const accept = (req.headers.get("Accept") || "");
-  const isForm = ct === "application/x-www-form-urlencoded" || ct === "multipart/form-data";
+  const isForm = ct === "application/x-www-form-urlencoded" || ct.startsWith("multipart/form-data");
   const wantsHtml = accept.includes("text/html") || accept.includes("application/xhtml+xml");
 
   if (isForm && wantsHtml) {
-    // redirect to home after setting cookie
     return new Response(null, {
       status: 303,
       headers: {
@@ -53,7 +51,6 @@ async function handleLogin(req) {
     });
   }
 
-  // otherwise return JSON (for API / fetch usage)
   return new Response(JSON.stringify({ ok: true, token }), {
     status: 200,
     headers: { "Content-Type": "application/json", "Set-Cookie": cookie }
