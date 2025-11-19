@@ -1,1 +1,42 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Admin — My Site</title>
+<style>
+ body{font-family:system-ui,Segoe UI,Roboto,Arial;background:#f3f6fb;margin:0;padding:24px;display:flex;justify-content:center}
+ .card{max-width:900px;width:100%;background:#fff;border-radius:12px;padding:22px;box-shadow:0 10px 30px rgba(2,6,23,0.06)}
+ h1{margin:0 0 8px}
+ pre{background:#f8fafc;padding:12px;border-radius:8px}
+ .btn{background:#2563eb;color:#fff;padding:8px 12px;border-radius:8px;border:0;cursor:pointer}
+</style>
+</head>
+<body>
+  <main class="card">
+    <h1>Halaman Admin</h1>
+    <p>Hanya user berperan <strong>admin</strong> yang dapat mengakses halaman ini.</p>
 
+    <div>
+      <button id="check" class="btn">Cek profil (GET /me)</button>
+    </div>
+
+    <pre id="out">Klik "Cek profil" untuk verifikasi.</pre>
+  </main>
+
+<script>
+document.getElementById('check').addEventListener('click', async ()=>{
+  const out=document.getElementById('out');
+  try {
+    const res = await fetch('/me', { credentials:'include' });
+    if (res.status === 401) { out.textContent = 'Tidak terautentikasi. Silakan login.'; return; }
+    if (res.status === 403) { out.textContent = 'Forbidden: bukan admin.'; return; }
+    const j = await res.json();
+    out.textContent = JSON.stringify(j, null, 2);
+  } catch (err) {
+    out.textContent = 'Network error';
+  }
+});
+</script>
+</body>
+</html>
