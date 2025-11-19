@@ -1,18 +1,14 @@
-addEventListener("fetch", event => {
-  event.respondWith(handle(event.request, event));
-});
+export default {
+  async fetch(request, env) {
 
-async function handle(req, event) {
-  const env = event.target.env; // Cloudflare mengisi env ke sini secara internal
+    // Tulis KV
+    await env.MY_KV.put("hello", "world");
 
-  // Tulis ke KV
-  await env.MY_KV.put("hello", "world");
+    // Baca KV
+    const value = await env.MY_KV.get("hello");
 
-  // Baca dari KV
-  const value = await env.MY_KV.get("hello");
-
-  return new Response("KV result: " + value, {
-    status: 200,
-    headers: { "Content-Type": "text/plain; charset=utf-8" }
-  });
-}
+    return new Response("KV result: " + value, {
+      headers: { "Content-Type": "text/plain" }
+    });
+  }
+};
