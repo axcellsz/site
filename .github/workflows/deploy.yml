@@ -3,11 +3,12 @@ name: Deploy Cloudflare Worker
 on:
   push:
     branches:
-      - main   # ubah jika branch utama berbeda
+      - main    # sesuaikan branch
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -17,12 +18,13 @@ jobs:
         with:
           node-version: "18"
 
-      - name: Install dependencies (optional)
-        run: |
-          if [ -f package.json ]; then npm ci; fi
+      - name: Install Wrangler globally
+        run: npm install -g wrangler@3
+
+      - name: Verify Wrangler installation
+        run: wrangler --version
 
       - name: Publish to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CF_API_TOKEN }}
-          workingDirectory: .  # sesuaikan jika file ada di subfolder
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: wrangler publish
