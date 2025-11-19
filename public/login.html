@@ -1,1 +1,65 @@
 
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Login — My Site</title>
+<style>
+  body{font-family:system-ui,Segoe UI,Roboto,Arial;background:#f3f6fb;margin:0;padding:24px;display:flex;justify-content:center}
+  .card{max-width:720px;width:100%;background:#fff;border-radius:12px;padding:22px;box-shadow:0 10px 30px rgba(2,6,23,0.06)}
+  label{display:block;margin-top:10px}
+  input{width:100%;padding:10px;border:1px solid #e6e9ef;border-radius:8px;margin-top:6px}
+  .btn{background:#2563eb;color:#fff;padding:10px;border-radius:10px;border:0;cursor:pointer;margin-top:12px}
+  pre{background:#f8fafc;padding:10px;border-radius:8px;margin-top:10px}
+  .small{font-size:13px;color:#6b7280}
+</style>
+</head>
+<body>
+  <main class="card">
+    <h1>Login</h1>
+    <form id="f">
+      <label for="email">Email</label>
+      <input id="email" type="email" required />
+      <label for="password">Password</label>
+      <input id="password" type="password" required />
+      <button class="btn" id="loginBtn">Login</button>
+    </form>
+
+    <div style="margin-top:14px">
+      <button id="bme" class="btn" style="background:#06b6d4">Get /me</button>
+      <pre id="out">Belum ada data</pre>
+    </div>
+
+    <div style="margin-top:12px" class="small">Belum punya akun? <a href="/register.html">Daftar</a></div>
+  </main>
+
+<script>
+(() => {
+  const f=document.getElementById('f'), email=document.getElementById('email'), password=document.getElementById('password');
+  const out=document.getElementById('out'), bme=document.getElementById('bme'), loginBtn=document.getElementById('loginBtn');
+
+  f.addEventListener('submit', async e=>{
+    e.preventDefault();
+    loginBtn.disabled=true; loginBtn.textContent='Logging in...';
+    try{
+      const res = await fetch('/login',{ method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email: email.value.trim(), password: password.value }) });
+      const j = await res.json();
+      if(!res.ok){ out.textContent = JSON.stringify(j); loginBtn.disabled=false; loginBtn.textContent='Login'; return; }
+      if(j.token) document.cookie = 'session=' + j.token + '; path=/; Secure; SameSite=Lax; Max-Age=' + (60*60*24*7);
+      out.textContent = JSON.stringify(j, null, 2);
+      loginBtn.disabled=false; loginBtn.textContent='Login';
+    }catch(err){ out.textContent='Network error'; loginBtn.disabled=false; loginBtn.textContent='Login'; }
+  });
+
+  bme.addEventListener('click', async ()=>{
+    const res = await fetch('/me', { credentials: 'include' });
+    try{
+      const j = await res.json();
+      out.textContent = JSON.stringify(j, null, 2);
+    }catch{ out.textContent = 'invalid response'; }
+  });
+})();
+</script>
+</body>
+</html>
