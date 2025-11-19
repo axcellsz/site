@@ -19,25 +19,60 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install Wrangler
-        run: npm install -g wrangler@3
-
+      # Note: we use npx wrangler@4 to avoid relying on runner global version
       - name: Upload public files to Pages_KV
         env:
           PAGES_KV_ID: ${{ secrets.PAGES_KV_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
           set -euo pipefail
-          if [ ! -d "$PAGES_DIR" ]; then echo "No $PAGES_DIR directory, skipping upload"; exit 0; fi
+
+          # Allow using CLOUDFLARE_API_TOKEN if set, otherwise fallback to CF_API_TOKEN
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] && [ -n "${CF_API_TOKEN:-}" ]; then
+            echo "CLOUDFLARE_API_TOKEN not set, falling back to CF_API_TOKEN"
+            export CLOUDFLARE_API_TOKEN="$CF_API_TOKEN"
+          fi
+
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "ERROR: No Cloudflare API token found. Set secret CLOUDFLARE_API_TOKEN (preferred) or CF_API_TOKEN (fallback)." >&2
+            exit 1
+          fi
+
+          if [ -z "${PAGES_KV_ID:-}" ]; then
+            echo "ERROR: PAGES_KV_ID secret not set." >&2
+            exit 1
+          fi
+
+          if [ ! -d "$PAGES_DIR" ]; then
+            echo "No $PAGES_DIR directory, skipping upload"
+            exit 0
+          fi
+
           cd "$PAGES_DIR"
-          # upload files; key = relative path without leading ./
+
+          echo "Uploading files from $(pwd) to KV namespace $PAGES_KV_ID using npx wrangler@4"
           find . -type f | while read -r f; do
             key="${f#./}"
             echo "Uploading $f -> $key"
-            wrangler kv:key put --namespace-id "$PAGES_KV_ID" "$key" "$f"
+            # use npx wrangler@4 and --path to read file contents reliably
+            npx --no-install wrangler@4 kv:key put --namespace-id "$PAGES_KV_ID" "$key" --path "$f"
           done
 
-      - name: Publish Worker
+      - name: Publish Worker (wrangler v4)
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-        run: wrangler deploy
+        run: |
+          set -euo pipefail
+          # fallback as above
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] && [ -n "${CF_API_TOKEN:-}" ]; then
+            export CLOUDFLARE_API_TOKEN="$CF_API_TOKEN"
+          fi
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
+            echo "ERROR: No Cloudflare API token found. Set secret CLOUDFLARE_API_TOKEN (preferred) or CF_API_TOKEN (fallback)." >&2
+            exit 1
+          fi
+
+          # deploy with wrangler v4 via npx
+          npx --no-install wrangler@4 deploy
