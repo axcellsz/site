@@ -1,1 +1,111 @@
 
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Daftar — My Site</title>
+<style>
+  :root{--accent:#2563eb;--muted:#6b7280}
+  body{font-family:system-ui,Segoe UI,Roboto,Arial;background:#f3f6fb;margin:0;padding:24px;display:flex;justify-content:center}
+  .card{max-width:720px;width:100%;background:#fff;border-radius:12px;padding:22px;box-shadow:0 10px 30px rgba(2,6,23,0.06)}
+  h1{margin:0 0 6px} label{font-size:13px;color:#111;margin-top:10px;display:block}
+  input{width:100%;padding:10px;border:1px solid #e6e9ef;border-radius:8px;margin-top:6px}
+  .btn{background:var(--accent);color:#fff;padding:10px 14px;border-radius:10px;border:0;cursor:pointer;margin-top:12px}
+  .small{font-size:13px;color:var(--muted)}
+  .strength{height:8px;border-radius:999px;background:#f1f5f9;overflow:hidden;margin-top:8px}
+  .strength > i{display:block;height:100%}
+  .s-weak{background:#f97316;width:33%}.s-med{background:#f59e0b;width:66%}.s-strong{background:#16a34a;width:100%}
+  .msg{margin-top:10px}
+  .row{display:flex;gap:10px}
+  .link{color:var(--accent);text-decoration:none}
+</style>
+</head>
+<body>
+  <main class="card">
+    <h1>Buat Akun Baru</h1>
+    <p class="small">Masukkan Nama, No. WhatsApp (format +62...) dan kata sandi.</p>
+
+    <form id="form">
+      <label for="displayName">Nama Lengkap</label>
+      <input id="displayName" name="displayName" required />
+
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" required />
+
+      <label for="phone">No. WhatsApp</label>
+      <input id="phone" name="phone" type="tel" placeholder="+628..." required />
+      <div class="small">Gunakan format internasional, mis. +628123...</div>
+
+      <label for="password">Kata Sandi (min 8)</label>
+      <input id="password" name="password" type="password" required />
+      <div class="strength" aria-hidden="true"><i id="bar"></i></div>
+      <div class="small">Kekuatan: <strong id="lbl">—</strong></div>
+
+      <label for="password2">Konfirmasi Kata Sandi</label>
+      <input id="password2" name="password2" type="password" required />
+
+      <div id="msg" class="msg" aria-live="polite"></div>
+
+      <button class="btn" id="submit">Daftar</button>
+    </form>
+
+    <div style="margin-top:14px;" class="small">
+      Sudah punya akun? <a class="link" href="/login.html">Login</a>
+    </div>
+  </main>
+
+<script>
+(() => {
+  const form = document.getElementById('form');
+  const email = document.getElementById('email');
+  const phone = document.getElementById('phone');
+  const displayName = document.getElementById('displayName');
+  const password = document.getElementById('password');
+  const password2 = document.getElementById('password2');
+  const msg = document.getElementById('msg');
+  const submit = document.getElementById('submit');
+  const bar = document.getElementById('bar');
+  const lbl = document.getElementById('lbl');
+
+  function setMsg(t, ok=true){ msg.innerHTML = '<div style="padding:8px;border-radius:8px;background:'+ (ok? '#f0fdf4':'#fff5f5') +';color:'+(ok?'#166534':'#7f1d1d')+'">'+t+'</div>'; }
+  function clearMsg(){ msg.innerHTML = ''; }
+
+  function strength(p){
+    let s=0; if(p.length>=8) s++; if(/[A-Z]/.test(p)) s++; if(/[0-9]/.test(p)) s++; if(/[^A-Za-z0-9]/.test(p)) s++; return s;
+  }
+  function updateStrength(){ const s=strength(password.value); if(!password.value){ bar.style.width='0'; lbl.textContent='—'; bar.className=''; return; } if(s<=1){ bar.className='s-weak'; lbl.textContent='Lemah'; } else if(s<=3){ bar.className='s-med'; lbl.textContent='Sedang'; } else { bar.className='s-strong'; lbl.textContent='Kuat'; } }
+
+  password.addEventListener('input', updateStrength);
+
+  form.addEventListener('submit', async e=>{
+    e.preventDefault(); clearMsg();
+    const vEmail=email.value.trim(), vPhone=phone.value.trim(), vName=displayName.value.trim();
+    const vPwd=password.value, vPwd2=password2.value;
+    if(!/\S+@\S+\.\S+/.test(vEmail)){ setMsg('Alamat email tidak valid',false); return; }
+    if(!/^\+?[0-9]{8,15}$/.test(vPhone.replace(/\s+/g,''))){ setMsg('Nomor WhatsApp tidak valid. Gunakan +62...',false); return; }
+    if(vPwd.length<8){ setMsg('Password minimal 8 karakter',false); return; }
+    if(vPwd !== vPwd2){ setMsg('Konfirmasi password tidak cocok',false); return; }
+
+    submit.disabled=true; submit.textContent='Mendaftarkan...';
+    try{
+      const res = await fetch('/register', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ email:vEmail, password:vPwd, displayName:vName, phone:vPhone })
+      });
+      const j = await res.json();
+      if(!res.ok) { setMsg('Gagal: '+(j.error||res.status), false); submit.disabled=false; submit.textContent='Daftar'; return; }
+      setMsg('Berhasil terdaftar!', true);
+      if(j.token) document.cookie = 'session=' + j.token + '; path=/; Secure; SameSite=Lax; Max-Age=' + (60*60*24*7);
+      setTimeout(()=> location.href='/', 900);
+    }catch(err){
+      setMsg('Kesalahan jaringan',false);
+      console.error(err);
+      submit.disabled=false; submit.textContent='Daftar';
+    }
+  });
+})();
+</script>
+</body>
+</html>
