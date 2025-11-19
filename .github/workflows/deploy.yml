@@ -19,7 +19,10 @@ jobs:
         with:
           node-version: 18
 
-      # Note: we use npx wrangler@4 to avoid relying on runner global version
+      - name: Install Wrangler v4 (global)
+        run: |
+          npm install -g wrangler@4
+
       - name: Upload public files to Pages_KV
         env:
           PAGES_KV_ID: ${{ secrets.PAGES_KV_ID }}
@@ -28,7 +31,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Allow using CLOUDFLARE_API_TOKEN if set, otherwise fallback to CF_API_TOKEN
+          # fallback to CF_API_TOKEN if CLOUDFLARE_API_TOKEN not provided
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] && [ -n "${CF_API_TOKEN:-}" ]; then
             echo "CLOUDFLARE_API_TOKEN not set, falling back to CF_API_TOKEN"
             export CLOUDFLARE_API_TOKEN="$CF_API_TOKEN"
@@ -51,12 +54,12 @@ jobs:
 
           cd "$PAGES_DIR"
 
-          echo "Uploading files from $(pwd) to KV namespace $PAGES_KV_ID using npx wrangler@4"
+          echo "Uploading files from $(pwd) to KV namespace $PAGES_KV_ID using wrangler v4"
+          # Upload each file; use --path to point to file contents
           find . -type f | while read -r f; do
             key="${f#./}"
             echo "Uploading $f -> $key"
-            # use npx wrangler@4 and --path to read file contents reliably
-            npx --no-install wrangler@4 kv:key put --namespace-id "$PAGES_KV_ID" "$key" --path "$f"
+            wrangler kv:key put --namespace-id "$PAGES_KV_ID" "$key" --path "$f"
           done
 
       - name: Publish Worker (wrangler v4)
@@ -65,7 +68,6 @@ jobs:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
         run: |
           set -euo pipefail
-          # fallback as above
           if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] && [ -n "${CF_API_TOKEN:-}" ]; then
             export CLOUDFLARE_API_TOKEN="$CF_API_TOKEN"
           fi
@@ -73,6 +75,4 @@ jobs:
             echo "ERROR: No Cloudflare API token found. Set secret CLOUDFLARE_API_TOKEN (preferred) or CF_API_TOKEN (fallback)." >&2
             exit 1
           fi
-
-          # deploy with wrangler v4 via npx
-          npx --no-install wrangler@4 deploy
+          wrangler deploy
