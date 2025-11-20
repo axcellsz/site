@@ -43,15 +43,14 @@ async function parseBodyFlexible(req) {
   if (ct === "application/json") {
     try { return await req.json(); } catch(e) { return {}; }
   }
-  if (ct === "application/x-www-form-urlencoded" || req.method === "POST" && ct === "") {
-    // form submission from browser (no JS) => parse formData
+  // browser form POST usually sends application/x-www-form-urlencoded
+  if (ct === "application/x-www-form-urlencoded" || (req.method === "POST" && ct === "")) {
     try {
       const fd = await req.formData();
       const obj = {};
       for (const [k,v] of fd.entries()) obj[k] = v;
       return obj;
     } catch(e) {
-      // fallback: try text -> urlsearchparams
       const t = await req.text().catch(()=>"");
       const p = new URLSearchParams(t);
       const obj = {};
@@ -59,14 +58,13 @@ async function parseBodyFlexible(req) {
       return obj;
     }
   }
-  // fallback: attempt JSON
+  // fallback try JSON
   try { return await req.json(); } catch(e){ return {}; }
 }
 
 /* ------------------ KV helpers ------------------ */
 async function kvGet(key) {
-  const v = await MY_KV.get(key);
-  return v;
+  return await MY_KV.get(key);
 }
 async function kvPut(key, obj, opts) {
   const raw = typeof obj === "string" ? obj : JSON.stringify(obj);
@@ -93,7 +91,7 @@ async function sessionUsernameFromRequest(req) {
   if (!raw) return null;
   try {
     const sess = JSON.parse(raw);
-    return sess.username;
+    return sess.username; // stored as lowercase
   } catch(e) {
     return null;
   }
@@ -104,6 +102,7 @@ async function servePageFromPagesKV(key, req) {
   // key like 'dashboard.html' or 'login.html'
   const raw = await PAGES_KV.get(key);
   if (!raw) return new Response("Not found", { status:404 });
+
   if (key === "dashboard.html") {
     // require session
     const username = await sessionUsernameFromRequest(req);
@@ -111,12 +110,21 @@ async function servePageFromPagesKV(key, req) {
       // redirect to login if not logged in
       return new Response(null, { status: 303, headers: { "Location": "/login" }});
     }
-    // personalize by replacing placeholder {{USERNAME}} (safe-escaped)
-    const safe = escapeHtml(username);
-    const html = raw.replace("{{USERNAME}}", safe);
+    // fetch user to get displayName (if any)
+    const userRaw = await MY_KV.get(`user:${username}`);
+    if (!userRaw) {
+      return new Response(null, { status: 303, headers: { "Location": "/login" }});
+    }
+    let u;
+    try { u = JSON.parse(userRaw); } catch(e){ u = { username }; }
+    const display = u.displayName || u.username || username;
+    const safe = escapeHtml(display);
+    // replace all occurrences of {{USERNAME}}
+    const html = String(raw).split("{{USERNAME}}").join(safe);
     return new Response(html, { status:200, headers: { "Content-Type": "text/html; charset=utf-8" }});
   }
-  // other pages: return raw
+
+  // other pages: return raw with guessed content type
   return new Response(raw, { status:200, headers: { "Content-Type": guessContentType(key) }});
 }
 function guessContentType(key) {
@@ -139,10 +147,14 @@ function escapeHtml(s) {
 
 async function handleRegister(req) {
   const body = await parseBodyFlexible(req);
-  const username = (body.username || "").trim();
+
+  const rawName = (body.username || "").trim();
+  const username = rawName.toLowerCase();
+  const displayName = (body.displayName || body.name || rawName || username).trim();
   const whatsapp = (body.whatsapp || body.wa || "").trim();
   const password = body.password || "";
-  if (!username || !/^[a-zA-Z0-9_.-]{3,40}$/.test(username)) {
+
+  if (!username || !/^[a-z0-9_.-]{3,40}$/.test(username)) {
     return new Response(JSON.stringify({ error:"invalid_username" }), { status:400, headers: JSON_HEADERS });
   }
   if (!/^[0-9+\- ]{6,20}$/.test(whatsapp)) {
@@ -151,23 +163,26 @@ async function handleRegister(req) {
   if (!password || password.length < 6) {
     return new Response(JSON.stringify({ error:"weak_password" }), { status:400, headers: JSON_HEADERS });
   }
+
   const exists = await kvGet(`user:${username}`);
   if (exists) return new Response(JSON.stringify({ error:"user_exists" }), { status:409, headers: JSON_HEADERS });
 
   const salt = randHex(16);
   const passwordHash = await hashPassword(password, salt);
-  const user = { username, whatsapp, salt, passwordHash, createdAt: new Date().toISOString() };
+  const user = { username, displayName, whatsapp, salt, passwordHash, createdAt: new Date().toISOString() };
   await kvPut(`user:${username}`, user);
 
-  // create session and set cookie then redirect to login page (form POST)
+  // create session token (optional) and set cookie
   const token = randHex(32);
   const ttl = 60*60*24*7;
   await kvPut(`sess:${token}`, { username, createdAt: new Date().toISOString() }, { expirationTtl: ttl });
 
   const accept = (req.headers.get("Accept") || "");
-  const isForm = (req.headers.get("Content-Type") || "").split(";")[0].trim().startsWith("application/x-www-form-urlencoded");
+  const contentType = (req.headers.get("Content-Type") || "").split(";")[0].trim();
+  const isForm = contentType === "application/x-www-form-urlencoded";
+
   if (isForm && accept.includes("text/html")) {
-    // redirect to login page (we created session but user must login)
+    // redirect to login page (we created session but user still goes to login)
     return new Response(null, { status:303, headers: { "Set-Cookie": makeCookieHeader(token, ttl), "Location": "/login?registered=1" }});
   }
   return new Response(JSON.stringify({ ok:true, token }), { status:200, headers: Object.assign({}, JSON_HEADERS, { "Set-Cookie": makeCookieHeader(token, ttl) })});
@@ -175,25 +190,49 @@ async function handleRegister(req) {
 
 async function handleLogin(req) {
   const body = await parseBodyFlexible(req);
-  const username = (body.username || "").trim();
+  const rawName = (body.username || "").trim();
+  const username = rawName.toLowerCase();
   const password = body.password || "";
-  if (!username || !password) return new Response(JSON.stringify({ error:"missing" }), { status:400, headers: JSON_HEADERS });
-  const raw = await kvGet(`user:${username}`);
-  if (!raw) return new Response(JSON.stringify({ error:"invalid_credentials" }), { status:401, headers: JSON_HEADERS });
-  const user = JSON.parse(raw);
-  const computed = await hashPassword(password, user.salt);
-  if (computed !== user.passwordHash) return new Response(JSON.stringify({ error:"invalid_credentials" }), { status:401, headers: JSON_HEADERS });
 
+  if (!username || !password) return new Response(JSON.stringify({ error:"missing" }), { status:400, headers: JSON_HEADERS });
+
+  const raw = await kvGet(`user:${username}`);
+  if (!raw) {
+    // invalid credentials
+    const contentType = (req.headers.get("Content-Type") || "").split(";")[0].trim();
+    const isForm = contentType === "application/x-www-form-urlencoded";
+    if (isForm) return new Response(null, { status:303, headers: { "Location": "/login?error=invalid_credentials" }});
+    return new Response(JSON.stringify({ error:"invalid_credentials" }), { status:401, headers: JSON_HEADERS });
+  }
+
+  let user;
+  try { user = JSON.parse(raw); } catch(e) { user = null; }
+  if (!user || !user.salt || !user.passwordHash) {
+    return new Response(JSON.stringify({ error:"invalid_credentials" }), { status:401, headers: JSON_HEADERS });
+  }
+
+  const computed = await hashPassword(password, user.salt);
+  if (computed !== user.passwordHash) {
+    const contentType = (req.headers.get("Content-Type") || "").split(";")[0].trim();
+    const isForm = contentType === "application/x-www-form-urlencoded";
+    if (isForm) return new Response(null, { status:303, headers: { "Location": "/login?error=invalid_credentials" }});
+    return new Response(JSON.stringify({ error:"invalid_credentials" }), { status:401, headers: JSON_HEADERS });
+  }
+
+  // success -> create session token & cookie
   const token = randHex(32);
   const ttl = 60*60*24*7;
   await kvPut(`sess:${token}`, { username, createdAt: new Date().toISOString() }, { expirationTtl: ttl });
 
   const accept = (req.headers.get("Accept") || "");
-  const isForm = (req.headers.get("Content-Type") || "").split(";")[0].trim().startsWith("application/x-www-form-urlencoded");
+  const contentType = (req.headers.get("Content-Type") || "").split(";")[0].trim();
+  const isForm = contentType === "application/x-www-form-urlencoded";
+
   if (isForm && accept.includes("text/html")) {
     // form POST: redirect to dashboard
     return new Response(null, { status:303, headers: { "Set-Cookie": makeCookieHeader(token, ttl), "Location": "/dashboard" }});
   }
+
   // API login returns token (json) and cookie
   return new Response(JSON.stringify({ ok:true, token }), { status:200, headers: Object.assign({}, JSON_HEADERS, { "Set-Cookie": makeCookieHeader(token, ttl) })});
 }
@@ -250,7 +289,6 @@ async function handle(req) {
   if (key) {
     const raw = await PAGES_KV.get(key);
     if (raw) {
-      // if someone requests dashboard.html by direct path, also inject check
       if (key === "dashboard.html") return await servePageFromPagesKV("dashboard.html", req);
       return new Response(raw, { status:200, headers:{ "Content-Type": guessContentType(key) }});
     }
