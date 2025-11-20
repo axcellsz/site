@@ -82,27 +82,47 @@ async function kvDelete(key) {
 async function hashPassword(password, salt) {
   return await sha256Hex(salt + "|" + password);
 }
-async function sessionUsernameFromRequest(req) {
-  const cookie = req.headers.get("Cookie") || "";
-  const token = getCookieValue(cookie, "session");
-  if (!token) return null;
-  const raw = await kvGet(`sess:${token}`);
-  if (!raw) return null;
-  try {
-    const sess = JSON.parse(raw);
-    return sess.username;
-  } catch(e) {
-    return null;
-  }
-}
-// return full session object (or null)
+
+/**
+ * Return full session object (and auto-upgrade if missing role)
+ * - If session exists but has no role, check user:username and add role to session in KV.
+ */
 async function sessionFromRequest(req) {
   const cookie = req.headers.get("Cookie") || "";
   const token = getCookieValue(cookie, "session");
   if (!token) return null;
   const raw = await kvGet(`sess:${token}`);
   if (!raw) return null;
-  try { return JSON.parse(raw); } catch(e) { return null; }
+  try {
+    let sess = JSON.parse(raw);
+    // if role missing, try to read user and update session (upgrade)
+    if (!sess.role && sess.username) {
+      try {
+        const rawUser = await MY_KV.get(`user:${sess.username}`);
+        if (rawUser) {
+          const u = JSON.parse(rawUser);
+          if (u && u.role) {
+            sess.role = u.role;
+            // re-save session (give it a TTL so it won't be permanent)
+            const ttl = 60*60*24*7;
+            await kvPut(`sess:${token}`, sess, { expirationTtl: ttl });
+          }
+        }
+      } catch(e){}
+    }
+    return sess;
+  } catch(e) {
+    return null;
+  }
+}
+
+/**
+ * Return username (uses sessionFromRequest so it's consistent with upgraded sessions)
+ */
+async function sessionUsernameFromRequest(req) {
+  const sess = await sessionFromRequest(req);
+  if (!sess) return null;
+  return sess.username || null;
 }
 
 /* ------------------ page serving with injection ------------------ */
@@ -112,13 +132,17 @@ async function servePageFromPagesKV(key, req) {
 
   // Dashboard: inject username (require login)
   if (key === "dashboard.html") {
-    const username = await sessionUsernameFromRequest(req);
-    if (!username) return new Response(null, { status: 303, headers: { "Location": "/login" }});
-    const userRaw = await MY_KV.get(`user:${username}`);
+    const sess = await sessionFromRequest(req);
+    if (!sess || !sess.username) return new Response(null, { status: 303, headers: { "Location": "/login" }});
+    // if admin, redirect to admin page
+    if (sess.role === 'admin') {
+      return new Response(null, { status: 303, headers: { "Location": "/admin" }});
+    }
+    const userRaw = await MY_KV.get(`user:${sess.username}`);
     if (!userRaw) return new Response(null, { status: 303, headers: { "Location": "/login" }});
     let u;
-    try { u = JSON.parse(userRaw); } catch(e){ u = { username }; }
-    const display = u.displayName || u.username || username;
+    try { u = JSON.parse(userRaw); } catch(e){ u = { username: sess.username }; }
+    const display = u.displayName || u.username || sess.username;
     const safe = escapeHtml(display);
     const html = String(raw).split("{{USERNAME}}").join(safe);
     return new Response(html, { status:200, headers: { "Content-Type": "text/html; charset=utf-8" }});
@@ -312,8 +336,6 @@ async function handleAdminDelete(req) {
   const body = await parseBodyFlexible(req);
   const username = (body.username || "").trim().toLowerCase();
   if (!username) return new Response(JSON.stringify({ error:'missing_username' }), { status:400, headers: JSON_HEADERS });
-
-  // prevent deleting the last admin? (not implemented) - you can add checks if needed
 
   await kvDelete(`user:${username}`);
 
