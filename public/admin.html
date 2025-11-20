@@ -3,40 +3,92 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Admin — My Site</title>
+<title>Admin - Users</title>
 <style>
- body{font-family:system-ui,Segoe UI,Roboto,Arial;background:#f3f6fb;margin:0;padding:24px;display:flex;justify-content:center}
- .card{max-width:900px;width:100%;background:#fff;border-radius:12px;padding:22px;box-shadow:0 10px 30px rgba(2,6,23,0.06)}
- h1{margin:0 0 8px}
- pre{background:#f8fafc;padding:12px;border-radius:8px}
- .btn{background:#2563eb;color:#fff;padding:8px 12px;border-radius:8px;border:0;cursor:pointer}
+  body{font-family:Arial,Helvetica,sans-serif;background:#f2f4f9;margin:0}
+  .wrap{max-width:760px;margin:40px auto;padding:24px;background:#fff;border-radius:14px;box-shadow:0 6px 18px rgba(10,20,40,.06)}
+  h1{margin:0 0 12px;font-size:28px}
+  table{width:100%;border-collapse:collapse;margin-top:12px}
+  th,td{padding:10px;border-bottom:1px solid #eee;text-align:left}
+  button{padding:8px 12px;border-radius:8px;border:0;background:#ff4d4f;color:#fff;cursor:pointer}
+  .small{font-size:13px;color:#666}
+  #msg{margin-top:12px;color:green}
 </style>
 </head>
 <body>
-  <main class="card">
-    <h1>Halaman Admin</h1>
-    <p>Hanya user berperan <strong>admin</strong> yang dapat mengakses halaman ini.</p>
+  <div class="wrap">
+    <h1>Admin — Daftar Pengguna</h1>
+    <p class="small">Hanya admin yang dapat melihat halaman ini.</p>
 
-    <div>
-      <button id="check" class="btn">Cek profil (GET /me)</button>
+    <div id="controls">
+      <button id="refresh">Refresh list</button>
+      <form id="logoutForm" action="/api/logout" method="post" style="display:inline-block;margin-left:12px;">
+        <button type="submit" style="background:#0074ff;padding:8px 12px;border-radius:8px;color:#fff;border:0">Logout</button>
+      </form>
     </div>
 
-    <pre id="out">Klik "Cek profil" untuk verifikasi.</pre>
-  </main>
+    <table id="usersTable" aria-live="polite">
+      <thead><tr><th>Username</th><th>No WhatsApp</th><th>Terdaftar</th><th>Aksi</th></tr></thead>
+      <tbody></tbody>
+    </table>
+
+    <div id="msg"></div>
+  </div>
 
 <script>
-document.getElementById('check').addEventListener('click', async ()=>{
-  const out=document.getElementById('out');
-  try {
-    const res = await fetch('/me', { credentials:'include' });
-    if (res.status === 401) { out.textContent = 'Tidak terautentikasi. Silakan login.'; return; }
-    if (res.status === 403) { out.textContent = 'Forbidden: bukan admin.'; return; }
-    const j = await res.json();
-    out.textContent = JSON.stringify(j, null, 2);
-  } catch (err) {
-    out.textContent = 'Network error';
+async function api(path, method='GET', body=null){
+  const opts = { method, headers: {} };
+  if (body && typeof body === 'object') {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
   }
-});
+  const res = await fetch(path, opts);
+  const txt = await res.text();
+  try { return { ok: res.ok, status: res.status, data: JSON.parse(txt) }; }
+  catch(e) { return { ok: res.ok, status: res.status, data: txt }; }
+}
+
+async function loadUsers(){
+  document.getElementById('msg').textContent = "Loading...";
+  const r = await api('/api/admin/users', 'GET');
+  if (!r.ok) {
+    document.getElementById('msg').textContent = 'Gagal ambil data: ' + (r.data && r.data.error ? r.data.error : r.status);
+    if (r.status === 401) location.href = '/login';
+    return;
+  }
+  const tbody = document.querySelector('#usersTable tbody');
+  tbody.innerHTML = '';
+  for (const u of r.data.users){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${escapeHtml(u.username)}</td>
+                    <td>${escapeHtml(u.whatsapp||'')}</td>
+                    <td>${escapeHtml(u.createdAt||'')}</td>
+                    <td><button data-user="${escapeHtml(u.username)}">Hapus</button></td>`;
+    tbody.appendChild(tr);
+  }
+  document.getElementById('msg').textContent = '';
+  // attach delete handlers
+  document.querySelectorAll('#usersTable button[data-user]').forEach(b=>{
+    b.onclick = async ()=> {
+      if(!confirm('Hapus user '+b.dataset.user+' ?')) return;
+      const res = await api('/api/admin/delete','POST',{ username: b.dataset.user });
+      if (res.ok) {
+        document.getElementById('msg').textContent = 'User dihapus';
+        loadUsers();
+      } else {
+        document.getElementById('msg').textContent = 'Gagal: ' + (res.data && res.data.error ? res.data.error : res.status);
+      }
+    };
+  });
+}
+
+function escapeHtml(s){
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+document.getElementById('refresh').onclick = loadUsers;
+window.addEventListener('load', loadUsers);
 </script>
 </body>
 </html>
