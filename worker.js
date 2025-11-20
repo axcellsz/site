@@ -1,195 +1,260 @@
-// worker.js (paste & deploy)
-// Bindings expected in wrangler.toml: MY_KV (users & sessions), PAGES_KV (static pages)
+// worker.js
+// Bindings expected: MY_KV (users + sessions), PAGES_KV (static HTML pages)
 
 addEventListener("fetch", event => {
-  event.respondWith(handleEvent(event));
+  event.respondWith(handle(event.request));
 });
 
-async function handleEvent(event) {
-  const req = event.request;
-  const url = new URL(req.url);
-  try {
-    // Routes:
-    if (url.pathname === "/api/login" && req.method === "POST") return await handleLogin(req);
-    if (url.pathname === "/api/register" && req.method === "POST") return await handleRegister(req);
-    // serve pages from Pages KV if exists: / -> index.html, /login -> login.html, /register -> register.html, /dashboard -> dashboard.html
-    return await handlePages(req, url.pathname);
-  } catch (err) {
-    return new Response(JSON.stringify({ error: "internal_error", message: String(err) }), { status: 500, headers: { "Content-Type": "application/json" }});
-  }
-}
+const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 
-// ---------------- helpers ----------------
-async function kvGet(key) {
-  const v = await MY_KV.get(key);
-  return v ? JSON.parse(v) : null;
+/* ------------------ helpers ------------------ */
+function hex(buffer) {
+  return Array.from(new Uint8Array(buffer)).map(b => b.toString(16).padStart(2,"0")).join("");
 }
-async function kvPut(key, obj, opts) {
-  const val = JSON.stringify(obj);
-  if (opts && opts.expirationTtl) {
-    await MY_KV.put(key, val, { expirationTtl: opts.expirationTtl });
-  } else {
-    await MY_KV.put(key, val);
-  }
-}
-function randHex(bytes=16) {
-  const a = new Uint8Array(bytes);
+function randHex(lenBytes=16) {
+  const a = new Uint8Array(lenBytes);
   crypto.getRandomValues(a);
-  return Array.from(a).map(b => b.toString(16).padStart(2,"0")).join("");
+  return hex(a);
 }
-async function sha256Hex(text) {
-  const data = new TextEncoder().encode(text);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  const h = Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,"0")).join("");
-  return h;
+async function sha256Hex(str) {
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.digest("SHA-256", enc.encode(str));
+  return hex(buf);
 }
-
-// parse body for JSON or form
+function getCookieValue(cookieHeader="", name) {
+  if (!cookieHeader) return null;
+  const parts = cookieHeader.split(";");
+  for (let p of parts) {
+    const [k,v] = p.split("=").map(s=>s && s.trim());
+    if (k === name) return v || "";
+  }
+  return null;
+}
+function makeCookieHeader(token, ttlSec=60*60*24*7) {
+  // Secure + HttpOnly + Path=/ + Max-Age
+  return `session=${token}; HttpOnly; Path=/; Max-Age=${ttlSec}; SameSite=Lax; Secure`;
+}
+function clearCookieHeader() {
+  // expire immediately
+  return `session=deleted; HttpOnly; Path=/; Max-Age=0; SameSite=Lax; Secure`;
+}
 async function parseBodyFlexible(req) {
   const ct = (req.headers.get("Content-Type") || "").split(";")[0].trim();
   if (ct === "application/json") {
-    return await req.json().catch(()=>({}));
+    try { return await req.json(); } catch(e) { return {}; }
   }
-  // form submissions (application/x-www-form-urlencoded or multipart/form-data)
-  if (ct === "application/x-www-form-urlencoded" || ct === "multipart/form-data") {
-    const fd = await req.formData();
-    const out = {};
-    for (const [k,v] of fd) out[k] = v;
-    return out;
+  if (ct === "application/x-www-form-urlencoded" || req.method === "POST" && ct === "") {
+    // form submission from browser (no JS) => parse formData
+    try {
+      const fd = await req.formData();
+      const obj = {};
+      for (const [k,v] of fd.entries()) obj[k] = v;
+      return obj;
+    } catch(e) {
+      // fallback: try text -> urlsearchparams
+      const t = await req.text().catch(()=>"");
+      const p = new URLSearchParams(t);
+      const obj = {};
+      for (const [k,v] of p.entries()) obj[k] = v;
+      return obj;
+    }
   }
-  // fallback: try text -> parse json or urlencoded
-  const t = await req.text().catch(()=>"");
-  try { return JSON.parse(t); } catch(e){}
-  // parse urlencoded fallback
-  const params = new URLSearchParams(t);
-  const obj = {};
-  for (const [k,v] of params) obj[k]=v;
-  return obj;
+  // fallback: attempt JSON
+  try { return await req.json(); } catch(e){ return {}; }
 }
 
-function jsonResponse(obj, status=200) {
-  return new Response(JSON.stringify(obj), { status, headers: { "Content-Type":"application/json" }});
+/* ------------------ KV helpers ------------------ */
+async function kvGet(key) {
+  const v = await MY_KV.get(key);
+  return v;
+}
+async function kvPut(key, obj, opts) {
+  const raw = typeof obj === "string" ? obj : JSON.stringify(obj);
+  if (opts && opts.expirationTtl) {
+    await MY_KV.put(key, raw, { expirationTtl: opts.expirationTtl });
+  } else {
+    await MY_KV.put(key, raw);
+  }
+}
+async function kvDelete(key) {
+  await MY_KV.delete(key);
 }
 
-// ---------------- auth helpers ----------------
+/* ------------------ auth helpers ------------------ */
 async function hashPassword(password, salt) {
-  // simple: sha256(salt + password)
-  return await sha256Hex(salt + password);
+  // simple salted SHA-256 (ok for demo). salt must be random hex.
+  return await sha256Hex(salt + "|" + password);
 }
-function validUsername(u){ return typeof u === "string" && /^[a-zA-Z0-9_.-]{3,40}$/.test(u); }
-function validPhone(p){ return typeof p === "string" && p.trim().length >= 6; }
-function validPassword(p){ return typeof p === "string" && p.length >= 6; }
+async function sessionUsernameFromRequest(req) {
+  const cookie = req.headers.get("Cookie") || "";
+  const token = getCookieValue(cookie, "session");
+  if (!token) return null;
+  const raw = await kvGet(`sess:${token}`);
+  if (!raw) return null;
+  try {
+    const sess = JSON.parse(raw);
+    return sess.username;
+  } catch(e) {
+    return null;
+  }
+}
 
-// ---------------- API: register ----------------
+/* ------------------ page serving with injection ------------------ */
+async function servePageFromPagesKV(key, req) {
+  // key like 'dashboard.html' or 'login.html'
+  const raw = await PAGES_KV.get(key);
+  if (!raw) return new Response("Not found", { status:404 });
+  if (key === "dashboard.html") {
+    // require session
+    const username = await sessionUsernameFromRequest(req);
+    if (!username) {
+      // redirect to login if not logged in
+      return new Response(null, { status: 303, headers: { "Location": "/login" }});
+    }
+    // personalize by replacing placeholder {{USERNAME}} (safe-escaped)
+    const safe = escapeHtml(username);
+    const html = raw.replace("{{USERNAME}}", safe);
+    return new Response(html, { status:200, headers: { "Content-Type": "text/html; charset=utf-8" }});
+  }
+  // other pages: return raw
+  return new Response(raw, { status:200, headers: { "Content-Type": guessContentType(key) }});
+}
+function guessContentType(key) {
+  if (key.endsWith(".html")) return "text/html; charset=utf-8";
+  if (key.endsWith(".css")) return "text/css; charset=utf-8";
+  if (key.endsWith(".js")) return "application/javascript; charset=utf-8";
+  return "text/plain; charset=utf-8";
+}
+function escapeHtml(s) {
+  if (s == null) return "";
+  return String(s)
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#39;");
+}
+
+/* ------------------ API handlers ------------------ */
+
 async function handleRegister(req) {
   const body = await parseBodyFlexible(req);
-  const username = (body.username||"").trim();
-  const whatsapp = (body.whatsapp||"").trim();
+  const username = (body.username || "").trim();
+  const whatsapp = (body.whatsapp || body.wa || "").trim();
   const password = body.password || "";
+  if (!username || !/^[a-zA-Z0-9_.-]{3,40}$/.test(username)) {
+    return new Response(JSON.stringify({ error:"invalid_username" }), { status:400, headers: JSON_HEADERS });
+  }
+  if (!/^[0-9+\- ]{6,20}$/.test(whatsapp)) {
+    return new Response(JSON.stringify({ error:"invalid_whatsapp" }), { status:400, headers: JSON_HEADERS });
+  }
+  if (!password || password.length < 6) {
+    return new Response(JSON.stringify({ error:"weak_password" }), { status:400, headers: JSON_HEADERS });
+  }
+  const exists = await kvGet(`user:${username}`);
+  if (exists) return new Response(JSON.stringify({ error:"user_exists" }), { status:409, headers: JSON_HEADERS });
 
-  if (!validUsername(username)) return jsonResponse({ error: "invalid_username" }, 400);
-  if (!validPhone(whatsapp)) return jsonResponse({ error: "invalid_whatsapp" }, 400);
-  if (!validPassword(password)) return jsonResponse({ error: "weak_password" }, 400);
-
-  if (await kvGet(`user:${username}`)) return jsonResponse({ error: "user_exists" }, 409);
-
-  const salt = randHex(12);
+  const salt = randHex(16);
   const passwordHash = await hashPassword(password, salt);
   const user = { username, whatsapp, salt, passwordHash, createdAt: new Date().toISOString() };
   await kvPut(`user:${username}`, user);
 
-  // create session token (optional) and store
-  const token = randHex(32);
-  const ttl = 60*60*24*7; // 7 days
-  await kvPut(`sess:${token}`, { username, createdAt: new Date().toISOString() }, { expirationTtl: ttl });
-
-  const cookie = `session=${token}; HttpOnly; Path=/; Max-Age=${ttl}; SameSite=Lax; Secure`;
-
-  // determine whether to redirect (browser form) or return json (API)
-  const accept = (req.headers.get("Accept")||"");
-  const ctype = (req.headers.get("Content-Type")||"").split(";")[0].trim();
-  const isForm = ctype === "application/x-www-form-urlencoded" || ctype === "multipart/form-data";
-  const wantsHtml = accept.includes("text/html") || !!req.headers.get("Referer");
-
-  if (isForm || wantsHtml) {
-    // redirect to login page with a query flag
-    return new Response(null, { status: 303, headers: { "Set-Cookie": cookie, "Location": "/login?registered=1" }});
-  }
-  return jsonResponse({ ok: true, token }, 200);
-}
-
-// ---------------- API: login ----------------
-async function handleLogin(req) {
-  const body = await parseBodyFlexible(req);
-  const username = (body.username||"").trim();
-  const password = body.password || "";
-
-  if (!validUsername(username) || !validPassword(password)) {
-    return maybeHtmlFailure(req, { error: "invalid_credentials" }, 401);
-  }
-
-  const user = await kvGet(`user:${username}`);
-  if (!user) return maybeHtmlFailure(req, { error: "invalid_credentials" }, 401);
-
-  const candidate = await hashPassword(password, user.salt);
-  if (candidate !== user.passwordHash) return maybeHtmlFailure(req, { error: "invalid_credentials" }, 401);
-
-  // ok -> create session
+  // create session and set cookie then redirect to login page (form POST)
   const token = randHex(32);
   const ttl = 60*60*24*7;
   await kvPut(`sess:${token}`, { username, createdAt: new Date().toISOString() }, { expirationTtl: ttl });
 
-  const cookie = `session=${token}; HttpOnly; Path=/; Max-Age=${ttl}; SameSite=Lax; Secure`;
-
-  // If browser form -> redirect to dashboard
-  const accept = (req.headers.get("Accept")||"");
-  const ctype = (req.headers.get("Content-Type")||"").split(";")[0].trim();
-  const isForm = ctype === "application/x-www-form-urlencoded" || ctype === "multipart/form-data";
-  const wantsHtml = accept.includes("text/html") || !!req.headers.get("Referer");
-
-  if (isForm || wantsHtml) {
-    return new Response(null, { status: 303, headers: { "Set-Cookie": cookie, "Location": "/dashboard" }});
+  const accept = (req.headers.get("Accept") || "");
+  const isForm = (req.headers.get("Content-Type") || "").split(";")[0].trim().startsWith("application/x-www-form-urlencoded");
+  if (isForm && accept.includes("text/html")) {
+    // redirect to login page (we created session but user must login)
+    return new Response(null, { status:303, headers: { "Set-Cookie": makeCookieHeader(token, ttl), "Location": "/login?registered=1" }});
   }
-
-  // API JSON response
-  return jsonResponse({ ok: true, token }, 200).then(r => {
-    // attach cookie header isn't possible directly with jsonResponse helper, so rebuild
-    return new Response(JSON.stringify({ ok:true, token }), { status:200, headers:{ "Content-Type":"application/json", "Set-Cookie": cookie }});
-  });
+  return new Response(JSON.stringify({ ok:true, token }), { status:200, headers: Object.assign({}, JSON_HEADERS, { "Set-Cookie": makeCookieHeader(token, ttl) })});
 }
 
-function maybeHtmlFailure(req, obj, status=400) {
-  const accept = (req.headers.get("Accept")||"");
-  const ctype = (req.headers.get("Content-Type")||"").split(";")[0].trim();
-  const isForm = ctype === "application/x-www-form-urlencoded" || ctype === "multipart/form-data";
-  const wantsHtml = accept.includes("text/html") || !!req.headers.get("Referer");
-  if (isForm || wantsHtml) {
-    // redirect back to login with error query
-    return new Response(null, { status: 303, headers: { "Location": "/login?error=1" }});
+async function handleLogin(req) {
+  const body = await parseBodyFlexible(req);
+  const username = (body.username || "").trim();
+  const password = body.password || "";
+  if (!username || !password) return new Response(JSON.stringify({ error:"missing" }), { status:400, headers: JSON_HEADERS });
+  const raw = await kvGet(`user:${username}`);
+  if (!raw) return new Response(JSON.stringify({ error:"invalid_credentials" }), { status:401, headers: JSON_HEADERS });
+  const user = JSON.parse(raw);
+  const computed = await hashPassword(password, user.salt);
+  if (computed !== user.passwordHash) return new Response(JSON.stringify({ error:"invalid_credentials" }), { status:401, headers: JSON_HEADERS });
+
+  const token = randHex(32);
+  const ttl = 60*60*24*7;
+  await kvPut(`sess:${token}`, { username, createdAt: new Date().toISOString() }, { expirationTtl: ttl });
+
+  const accept = (req.headers.get("Accept") || "");
+  const isForm = (req.headers.get("Content-Type") || "").split(";")[0].trim().startsWith("application/x-www-form-urlencoded");
+  if (isForm && accept.includes("text/html")) {
+    // form POST: redirect to dashboard
+    return new Response(null, { status:303, headers: { "Set-Cookie": makeCookieHeader(token, ttl), "Location": "/dashboard" }});
   }
-  return new Response(JSON.stringify(obj), { status, headers: { "Content-Type":"application/json" }});
+  // API login returns token (json) and cookie
+  return new Response(JSON.stringify({ ok:true, token }), { status:200, headers: Object.assign({}, JSON_HEADERS, { "Set-Cookie": makeCookieHeader(token, ttl) })});
 }
 
-// ---------------- static pages from Pages KV ----------------
-async function handlePages(req, pathname) {
-  // normalize
-  if (pathname === "/") pathname = "/index.html";
-  // map common routes
-  if (pathname === "/login") pathname = "/login.html";
-  if (pathname === "/register") pathname = "/register.html";
-  if (pathname === "/dashboard") pathname = "/dashboard.html";
-
-  // remove leading slash to use as key in PAGES_KV
-  const key = pathname.startsWith("/") ? pathname.slice(1) : pathname;
-  const s = await PAGES_KV.get(key);
-  if (s) {
-    // return raw html
-    // basic content-type based on extension
-    const ct = key.endsWith(".html") ? "text/html; charset=utf-8" :
-               key.endsWith(".css") ? "text/css; charset=utf-8" :
-               key.endsWith(".js") ? "application/javascript; charset=utf-8" :
-               "text/plain; charset=utf-8";
-    return new Response(s, { status:200, headers: { "Content-Type": ct }});
+async function handleLogout(req) {
+  const cookie = req.headers.get("Cookie") || "";
+  const token = getCookieValue(cookie, "session");
+  if (token) {
+    await kvDelete(`sess:${token}`);
   }
-  return new Response("Not found", { status: 404, headers: { "Content-Type":"text/plain" }});
+  // clear cookie and redirect to login
+  return new Response(null, { status:303, headers: { "Set-Cookie": clearCookieHeader(), "Location": "/login" }});
+}
+
+async function handleMe(req) {
+  const username = await sessionUsernameFromRequest(req);
+  if (!username) return new Response(JSON.stringify({ error:"no_session" }), { status:401, headers: JSON_HEADERS });
+  const raw = await kvGet(`user:${username}`);
+  if (!raw) return new Response(JSON.stringify({ error:"not_found" }), { status:404, headers: JSON_HEADERS });
+  const u = JSON.parse(raw);
+  delete u.passwordHash; delete u.salt;
+  return new Response(JSON.stringify({ ok:true, user: u }), { status:200, headers: JSON_HEADERS });
+}
+
+/* ------------------ main handler ------------------ */
+async function handle(req) {
+  const url = new URL(req.url);
+
+  // API routes
+  if (url.pathname === "/api/register" && req.method === "POST") return handleRegister(req);
+  if (url.pathname === "/api/login" && req.method === "POST") return handleLogin(req);
+  if (url.pathname === "/api/logout" && (req.method === "POST" || req.method === "GET")) return handleLogout(req);
+  if (url.pathname === "/api/me" && req.method === "GET") return handleMe(req);
+
+  // static pages from PAGES_KV
+  // map paths: / -> index.html, /login -> login.html, /register -> register.html, /dashboard -> dashboard.html
+  const mapping = {
+    "/": "index.html",
+    "/index.html": "index.html",
+    "/login": "login.html",
+    "/login.html": "login.html",
+    "/register": "register.html",
+    "/register.html": "register.html",
+    "/dashboard": "dashboard.html",
+    "/dashboard.html": "dashboard.html"
+  };
+
+  if (mapping[url.pathname]) {
+    return await servePageFromPagesKV(mapping[url.pathname], req);
+  }
+
+  // fallback: try the path without leading slash as key
+  const key = url.pathname.startsWith("/") ? url.pathname.slice(1) : url.pathname;
+  if (key) {
+    const raw = await PAGES_KV.get(key);
+    if (raw) {
+      // if someone requests dashboard.html by direct path, also inject check
+      if (key === "dashboard.html") return await servePageFromPagesKV("dashboard.html", req);
+      return new Response(raw, { status:200, headers:{ "Content-Type": guessContentType(key) }});
+    }
+  }
+
+  return new Response("Not found", { status:404 });
 }
