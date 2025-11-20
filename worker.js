@@ -96,6 +96,15 @@ async function sessionUsernameFromRequest(req) {
     return null;
   }
 }
+// return full session object (or null)
+async function sessionFromRequest(req) {
+  const cookie = req.headers.get("Cookie") || "";
+  const token = getCookieValue(cookie, "session");
+  if (!token) return null;
+  const raw = await kvGet(`sess:${token}`);
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch(e) { return null; }
+}
 
 /* ------------------ page serving with injection ------------------ */
 async function servePageFromPagesKV(key, req) {
@@ -122,6 +131,25 @@ async function servePageFromPagesKV(key, req) {
     // replace all occurrences of {{USERNAME}}
     const html = String(raw).split("{{USERNAME}}").join(safe);
     return new Response(html, { status:200, headers: { "Content-Type": "text/html; charset=utf-8" }});
+  }
+
+  if (key === "admin.html") {
+    // require admin session
+    const sess = await sessionFromRequest(req);
+    if (!sess || !sess.username) {
+      return new Response(null, { status: 303, headers: { "Location": "/login" }});
+    }
+    // check role
+    const rawUser = await MY_KV.get(`user:${sess.username}`);
+    if (!rawUser) return new Response(null, { status: 303, headers: { "Location": "/login" }});
+    let user;
+    try { user = JSON.parse(rawUser); } catch(e){ user = null; }
+    if (!user || user.role !== 'admin') {
+      // unauthorized -> redirect to login (or show 403)
+      return new Response("Forbidden", { status:403 });
+    }
+    // allowed, return admin page
+    return new Response(raw, { status:200, headers: { "Content-Type": "text/html; charset=utf-8" }});
   }
 
   // other pages: return raw with guessed content type
@@ -169,7 +197,9 @@ async function handleRegister(req) {
 
   const salt = randHex(16);
   const passwordHash = await hashPassword(password, salt);
-  const user = { username, displayName, whatsapp, salt, passwordHash, createdAt: new Date().toISOString() };
+  // role: default 'user', allow explicit admin creation only if request sets role:'admin' (be careful)
+  const role = (body.role === 'admin' || username === 'admin') ? 'admin' : 'user';
+  const user = { username, displayName, whatsapp, salt, passwordHash, role, createdAt: new Date().toISOString() };
   await kvPut(`user:${username}`, user);
 
   // create session token (optional) and set cookie
@@ -228,9 +258,12 @@ async function handleLogin(req) {
   const contentType = (req.headers.get("Content-Type") || "").split(";")[0].trim();
   const isForm = contentType === "application/x-www-form-urlencoded";
 
+  // If user is admin -> redirect to /admin for form POSTs
+  const redirectTarget = (user && user.role === 'admin') ? "/admin" : "/dashboard";
+
   if (isForm && accept.includes("text/html")) {
-    // form POST: redirect to dashboard
-    return new Response(null, { status:303, headers: { "Set-Cookie": makeCookieHeader(token, ttl), "Location": "/dashboard" }});
+    // form POST: redirect to dashboard or admin
+    return new Response(null, { status:303, headers: { "Set-Cookie": makeCookieHeader(token, ttl), "Location": redirectTarget }});
   }
 
   // API login returns token (json) and cookie
@@ -257,6 +290,66 @@ async function handleMe(req) {
   return new Response(JSON.stringify({ ok:true, user: u }), { status:200, headers: JSON_HEADERS });
 }
 
+/* ------------------ admin handlers ------------------ */
+
+// list users (admin only)
+async function handleAdminList(req) {
+  const sess = await sessionFromRequest(req);
+  if (!sess || !sess.username) return new Response(JSON.stringify({ error:'unauthorized' }), { status:401, headers: JSON_HEADERS });
+  const rawUser = await kvGet(`user:${sess.username}`);
+  if (!rawUser) return new Response(JSON.stringify({ error:'unauthorized' }), { status:401, headers: JSON_HEADERS });
+  let adminUser;
+  try { adminUser = JSON.parse(rawUser); } catch(e){ adminUser = null; }
+  if (!adminUser || adminUser.role !== 'admin') return new Response(JSON.stringify({ error:'unauthorized' }), { status:401, headers: JSON_HEADERS });
+
+  // list keys with prefix "user:"
+  const list = await MY_KV.list({ prefix: 'user:' });
+  const users = [];
+  for (const k of list.keys) {
+    const raw = await MY_KV.get(k.name);
+    if (!raw) continue;
+    try {
+      const u = JSON.parse(raw);
+      delete u.passwordHash;
+      delete u.salt;
+      users.push(u);
+    } catch(e){}
+  }
+  return new Response(JSON.stringify({ ok:true, users }), { status:200, headers: JSON_HEADERS });
+}
+
+// delete user (admin only)
+async function handleAdminDelete(req) {
+  const sess = await sessionFromRequest(req);
+  if (!sess || !sess.username) return new Response(JSON.stringify({ error:'unauthorized' }), { status:401, headers: JSON_HEADERS });
+  const rawUser = await kvGet(`user:${sess.username}`);
+  if (!rawUser) return new Response(JSON.stringify({ error:'unauthorized' }), { status:401, headers: JSON_HEADERS });
+  let adminUser;
+  try { adminUser = JSON.parse(rawUser); } catch(e){ adminUser = null; }
+  if (!adminUser || adminUser.role !== 'admin') return new Response(JSON.stringify({ error:'unauthorized' }), { status:401, headers: JSON_HEADERS });
+
+  const body = await parseBodyFlexible(req);
+  const username = (body.username || "").trim().toLowerCase();
+  if (!username) return new Response(JSON.stringify({ error:'missing_username' }), { status:400, headers: JSON_HEADERS });
+
+  // delete user and sessions for that user
+  await kvDelete(`user:${username}`);
+
+  const sessions = await MY_KV.list({ prefix: 'sess:' });
+  for (const s of sessions.keys) {
+    const raw = await MY_KV.get(s.name);
+    if (!raw) continue;
+    try {
+      const obj = JSON.parse(raw);
+      if (obj.username === username) {
+        await MY_KV.delete(s.name);
+      }
+    } catch(e){}
+  }
+
+  return new Response(JSON.stringify({ ok:true }), { status:200, headers: JSON_HEADERS });
+}
+
 /* ------------------ main handler ------------------ */
 async function handle(req) {
   const url = new URL(req.url);
@@ -267,8 +360,12 @@ async function handle(req) {
   if (url.pathname === "/api/logout" && (req.method === "POST" || req.method === "GET")) return handleLogout(req);
   if (url.pathname === "/api/me" && req.method === "GET") return handleMe(req);
 
+  // admin API
+  if (url.pathname === "/api/admin/users" && req.method === "GET") return handleAdminList(req);
+  if (url.pathname === "/api/admin/delete" && (req.method === "POST" || req.method === "DELETE")) return handleAdminDelete(req);
+
   // static pages from PAGES_KV
-  // map paths: / -> index.html, /login -> login.html, /register -> register.html, /dashboard -> dashboard.html
+  // map paths: / -> index.html, /login -> login.html, /register -> register.html, /dashboard -> dashboard.html, /admin -> admin.html
   const mapping = {
     "/": "index.html",
     "/index.html": "index.html",
@@ -277,7 +374,9 @@ async function handle(req) {
     "/register": "register.html",
     "/register.html": "register.html",
     "/dashboard": "dashboard.html",
-    "/dashboard.html": "dashboard.html"
+    "/dashboard.html": "dashboard.html",
+    "/admin": "admin.html",
+    "/admin.html": "admin.html"
   };
 
   if (mapping[url.pathname]) {
@@ -290,6 +389,7 @@ async function handle(req) {
     const raw = await PAGES_KV.get(key);
     if (raw) {
       if (key === "dashboard.html") return await servePageFromPagesKV("dashboard.html", req);
+      if (key === "admin.html") return await servePageFromPagesKV("admin.html", req);
       return new Response(raw, { status:200, headers:{ "Content-Type": guessContentType(key) }});
     }
   }
