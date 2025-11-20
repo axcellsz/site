@@ -80,7 +80,6 @@ async function kvDelete(key) {
 
 /* ------------------ auth helpers ------------------ */
 async function hashPassword(password, salt) {
-  // simple salted SHA-256 (ok for demo). salt must be random hex.
   return await sha256Hex(salt + "|" + password);
 }
 async function sessionUsernameFromRequest(req) {
@@ -91,7 +90,7 @@ async function sessionUsernameFromRequest(req) {
   if (!raw) return null;
   try {
     const sess = JSON.parse(raw);
-    return sess.username; // stored as lowercase
+    return sess.username;
   } catch(e) {
     return null;
   }
@@ -108,51 +107,39 @@ async function sessionFromRequest(req) {
 
 /* ------------------ page serving with injection ------------------ */
 async function servePageFromPagesKV(key, req) {
-  // key like 'dashboard.html' or 'login.html'
   const raw = await PAGES_KV.get(key);
   if (!raw) return new Response("Not found", { status:404 });
 
+  // Dashboard: inject username (require login)
   if (key === "dashboard.html") {
-    // require session
     const username = await sessionUsernameFromRequest(req);
-    if (!username) {
-      // redirect to login if not logged in
-      return new Response(null, { status: 303, headers: { "Location": "/login" }});
-    }
-    // fetch user to get displayName (if any)
+    if (!username) return new Response(null, { status: 303, headers: { "Location": "/login" }});
     const userRaw = await MY_KV.get(`user:${username}`);
-    if (!userRaw) {
-      return new Response(null, { status: 303, headers: { "Location": "/login" }});
-    }
+    if (!userRaw) return new Response(null, { status: 303, headers: { "Location": "/login" }});
     let u;
     try { u = JSON.parse(userRaw); } catch(e){ u = { username }; }
     const display = u.displayName || u.username || username;
     const safe = escapeHtml(display);
-    // replace all occurrences of {{USERNAME}}
     const html = String(raw).split("{{USERNAME}}").join(safe);
     return new Response(html, { status:200, headers: { "Content-Type": "text/html; charset=utf-8" }});
   }
 
+  // Admin: require admin role, inject username
   if (key === "admin.html") {
-    // require admin session
     const sess = await sessionFromRequest(req);
-    if (!sess || !sess.username) {
-      return new Response(null, { status: 303, headers: { "Location": "/login" }});
-    }
-    // check role
+    if (!sess || !sess.username) return new Response(null, { status: 303, headers: { "Location": "/login" }});
     const rawUser = await MY_KV.get(`user:${sess.username}`);
     if (!rawUser) return new Response(null, { status: 303, headers: { "Location": "/login" }});
     let user;
     try { user = JSON.parse(rawUser); } catch(e){ user = null; }
-    if (!user || user.role !== 'admin') {
-      // unauthorized -> redirect to login (or show 403)
-      return new Response("Forbidden", { status:403 });
-    }
-    // allowed, return admin page
-    return new Response(raw, { status:200, headers: { "Content-Type": "text/html; charset=utf-8" }});
+    if (!user || user.role !== 'admin') return new Response("Forbidden", { status:403 });
+    const display = user.displayName || user.username || sess.username;
+    const safe = escapeHtml(display);
+    const html = String(raw).split("{{USERNAME}}").join(safe);
+    return new Response(html, { status:200, headers: { "Content-Type": "text/html; charset=utf-8" }});
   }
 
-  // other pages: return raw with guessed content type
+  // other pages
   return new Response(raw, { status:200, headers: { "Content-Type": guessContentType(key) }});
 }
 function guessContentType(key) {
@@ -197,22 +184,21 @@ async function handleRegister(req) {
 
   const salt = randHex(16);
   const passwordHash = await hashPassword(password, salt);
-  // role: default 'user', allow explicit admin creation only if request sets role:'admin' (be careful)
+  // role: default 'user', allow explicit admin creation only if request sets role:'admin' or username === 'admin'
   const role = (body.role === 'admin' || username === 'admin') ? 'admin' : 'user';
   const user = { username, displayName, whatsapp, salt, passwordHash, role, createdAt: new Date().toISOString() };
   await kvPut(`user:${username}`, user);
 
-  // create session token (optional) and set cookie
+  // create session token and include role in session
   const token = randHex(32);
   const ttl = 60*60*24*7;
-  await kvPut(`sess:${token}`, { username, createdAt: new Date().toISOString() }, { expirationTtl: ttl });
+  await kvPut(`sess:${token}`, { username, role, createdAt: new Date().toISOString() }, { expirationTtl: ttl });
 
   const accept = (req.headers.get("Accept") || "");
   const contentType = (req.headers.get("Content-Type") || "").split(";")[0].trim();
   const isForm = contentType === "application/x-www-form-urlencoded";
 
   if (isForm && accept.includes("text/html")) {
-    // redirect to login page (we created session but user still goes to login)
     return new Response(null, { status:303, headers: { "Set-Cookie": makeCookieHeader(token, ttl), "Location": "/login?registered=1" }});
   }
   return new Response(JSON.stringify({ ok:true, token }), { status:200, headers: Object.assign({}, JSON_HEADERS, { "Set-Cookie": makeCookieHeader(token, ttl) })});
@@ -228,7 +214,6 @@ async function handleLogin(req) {
 
   const raw = await kvGet(`user:${username}`);
   if (!raw) {
-    // invalid credentials
     const contentType = (req.headers.get("Content-Type") || "").split(";")[0].trim();
     const isForm = contentType === "application/x-www-form-urlencoded";
     if (isForm) return new Response(null, { status:303, headers: { "Location": "/login?error=invalid_credentials" }});
@@ -249,25 +234,23 @@ async function handleLogin(req) {
     return new Response(JSON.stringify({ error:"invalid_credentials" }), { status:401, headers: JSON_HEADERS });
   }
 
-  // success -> create session token & cookie
+  // success -> create session token & cookie (include role in session)
   const token = randHex(32);
   const ttl = 60*60*24*7;
-  await kvPut(`sess:${token}`, { username, createdAt: new Date().toISOString() }, { expirationTtl: ttl });
+  const role = user.role || 'user';
+  await kvPut(`sess:${token}`, { username, role, createdAt: new Date().toISOString() }, { expirationTtl: ttl });
 
   const accept = (req.headers.get("Accept") || "");
   const contentType = (req.headers.get("Content-Type") || "").split(";")[0].trim();
   const isForm = contentType === "application/x-www-form-urlencoded";
 
-  // If user is admin -> redirect to /admin for form POSTs
   const redirectTarget = (user && user.role === 'admin') ? "/admin" : "/dashboard";
 
   if (isForm && accept.includes("text/html")) {
-    // form POST: redirect to dashboard or admin
     return new Response(null, { status:303, headers: { "Set-Cookie": makeCookieHeader(token, ttl), "Location": redirectTarget }});
   }
 
-  // API login returns token (json) and cookie
-  return new Response(JSON.stringify({ ok:true, token }), { status:200, headers: Object.assign({}, JSON_HEADERS, { "Set-Cookie": makeCookieHeader(token, ttl) })});
+  return new Response(JSON.stringify({ ok:true, token, role }), { status:200, headers: Object.assign({}, JSON_HEADERS, { "Set-Cookie": makeCookieHeader(token, ttl) })});
 }
 
 async function handleLogout(req) {
@@ -276,7 +259,6 @@ async function handleLogout(req) {
   if (token) {
     await kvDelete(`sess:${token}`);
   }
-  // clear cookie and redirect to login
   return new Response(null, { status:303, headers: { "Set-Cookie": clearCookieHeader(), "Location": "/login" }});
 }
 
@@ -302,7 +284,6 @@ async function handleAdminList(req) {
   try { adminUser = JSON.parse(rawUser); } catch(e){ adminUser = null; }
   if (!adminUser || adminUser.role !== 'admin') return new Response(JSON.stringify({ error:'unauthorized' }), { status:401, headers: JSON_HEADERS });
 
-  // list keys with prefix "user:"
   const list = await MY_KV.list({ prefix: 'user:' });
   const users = [];
   for (const k of list.keys) {
@@ -332,7 +313,8 @@ async function handleAdminDelete(req) {
   const username = (body.username || "").trim().toLowerCase();
   if (!username) return new Response(JSON.stringify({ error:'missing_username' }), { status:400, headers: JSON_HEADERS });
 
-  // delete user and sessions for that user
+  // prevent deleting the last admin? (not implemented) - you can add checks if needed
+
   await kvDelete(`user:${username}`);
 
   const sessions = await MY_KV.list({ prefix: 'sess:' });
@@ -365,7 +347,6 @@ async function handle(req) {
   if (url.pathname === "/api/admin/delete" && (req.method === "POST" || req.method === "DELETE")) return handleAdminDelete(req);
 
   // static pages from PAGES_KV
-  // map paths: / -> index.html, /login -> login.html, /register -> register.html, /dashboard -> dashboard.html, /admin -> admin.html
   const mapping = {
     "/": "index.html",
     "/index.html": "index.html",
