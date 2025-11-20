@@ -1,181 +1,137 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="id">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Beranda</title>
-<style>
-  :root{
-    --bg: #f2f4f8;
-    --card: #fff;
-    --accent: #0b63ff;
-    --muted: #6b7280;
-    --height-top: 64px;
-    --height-bottom: 76px;
-  }
-  html,body{
-    height:100%;
-    margin:0;
-    background:var(--bg);
-    font-family: Inter, Roboto, Arial, sans-serif;
-    -webkit-font-smoothing:antialiased;
-    -moz-osx-font-smoothing:grayscale;
-  }
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Site — Beranda</title>
+  <style>
+    :root{
+      --brand-a:#ff7c3c;
+      --brand-b:#ff4b2b;
+      --bg:#f2f4f7;
+      --card:#ffffff;
+      --muted:#6b7280;
+      --accent:#1560ff;
+      --radius:18px;
+      --gutter:16px;
+      --header-h:72px;
+      --footer-h:84px;
+    }
 
-  /* TOP BAR (fixed) */
-  .topbar{
-    position:fixed;
-    top:0; left:0; right:0;
-    height:var(--height-top);
-    background:linear-gradient(90deg,#e11d48,#ef4444); /* example */
-    color:white;
-    display:flex;
-    align-items:center;
-    gap:12px;
-    padding:0 16px;
-    box-shadow:0 6px 20px rgba(2,6,23,0.08);
-    z-index:30;
-  }
-  .topbar .left {
-    display:flex; align-items:center; gap:12px;
-  }
-  .avatar{
-    width:42px; height:42px; border-radius:10px; background:#fff3; display:inline-flex;
-    align-items:center; justify-content:center; font-size:20px;
-  }
-  .greet{
-    line-height:1;
-  }
-  .greet .hello{ font-size:12px; opacity:0.95; }
-  .greet .name{ font-size:16px; font-weight:700; letter-spacing:-0.2px; }
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0;background:var(--bg);font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;color:#091327}
 
-  /* BOTTOM BAR (fixed) */
-  .bottombar{
-    position:fixed;
-    left:0; right:0; bottom:0;
-    height:var(--height-bottom);
-    background:linear-gradient(180deg,#fff,#f7fafc);
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    padding:10px 16px;
-    gap:12px;
-    box-shadow:0 -8px 30px rgba(2,6,23,0.06);
-    z-index:30;
-  }
-  .bottombar .actions { display:flex; gap:10px; }
-  .btn {
-    background:var(--accent); color:white; border:none; padding:10px 14px;
-    border-radius:10px; text-decoration:none; font-weight:600; display:inline-block;
-    min-width:110px; text-align:center;
-  }
-  .btn.ghost{ background:transparent; color:var(--accent); border:1px solid rgba(11,99,255,0.12); }
+    /* Fixed header */
+    header.app-header{
+      position:fixed;left:0;right:0;top:0;height:var(--header-h);
+      display:flex;align-items:center;gap:12px;padding:12px;
+      background:linear-gradient(90deg,var(--brand-a),var(--brand-b));
+      color:#fff;z-index:1000;box-shadow:0 6px 18px rgba(0,0,0,0.12);
+      padding-top:env(safe-area-inset-top);
+    }
+    header .logo-wrap{width:52px;height:52px;border-radius:12px;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;flex:0 0 52px;overflow:hidden}
+    header .logo-wrap img{width:78%;height:78%;object-fit:contain;filter:brightness(0) invert(1)}
+    header .title{line-height:1}
+    header .title .small{font-size:12px;opacity:0.95}
+    header .title .big{font-weight:700;font-size:17px;margin-top:2px}
+    header .right{margin-left:auto;display:flex;gap:12px;align-items:center}
+    header .icon-circle{width:44px;height:44px;border-radius:50%;background:rgba(255,255,255,0.18);display:flex;align-items:center;justify-content:center}
 
-  /* main content area between fixed bars */
-  .content-wrap{
-    /* make top & bottom safe space */
-    padding-top: calc(var(--height-top) + 18px);
-    padding-bottom: calc(var(--height-bottom) + 18px);
-    min-height:100vh;
-    box-sizing:border-box;
-  }
-  .container{
-    max-width:780px;
-    margin:0 auto;
-    padding:0 18px;
-  }
+    /* space below header so content not hidden */
+    .spacer-top{height:calc(var(--header-h) + 6px)}
 
-  .card{
-    background:var(--card);
-    border-radius:18px;
-    padding:22px;
-    box-shadow:0 8px 30px rgba(2,6,23,0.06);
-    margin:24px 0;
-  }
+    /* main scrollable area filling between header & footer */
+    main.content{
+      max-width:980px;margin:0 auto;padding:18px;padding-bottom:28px;
+      min-height:calc(100vh - var(--header-h) - var(--footer-h));
+    }
 
-  /* banner */
-  .banner{
-    width:100%;
-    height:160px;
-    border-radius:14px;
-    overflow:hidden;
-    display:block;
-    background:linear-gradient(90deg,#60a5fa,#06b6d4);
-    margin-bottom:16px;
-    object-fit:cover;
-  }
+    .card{background:var(--card);border-radius:var(--radius);padding:20px;margin-bottom:18px;box-shadow:0 8px 28px rgba(16,24,40,0.06)}
+    .banner{
+      height:140px;border-radius:12px;background:linear-gradient(90deg,#3fb0ff,#14c1b8);
+      display:flex;align-items:center;padding:12px;color:#fff;overflow:hidden;
+    }
+    .banner img{width:100%;height:100%;object-fit:cover;border-radius:8px}
 
-  h1 { margin:0 0 8px 0; font-size:32px; }
-  p.lead { color:var(--muted); margin:0 0 16px 0; font-size:15px; line-height:1.45; }
+    h1{font-size:32px;margin:18px 0 8px}
+    p.lead{color:var(--muted);line-height:1.6}
 
-  /* responsiveness for small devices */
-  @media (max-width:420px){
-    :root { --height-top:60px; --height-bottom:76px; }
-    .banner{ height:140px; }
-    h1{ font-size:26px; }
-    .btn{ min-width:88px; padding:10px 12px; }
-  }
-</style>
+    .btn-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}
+    a.btn{border:1px solid rgba(21,96,255,0.12);background:transparent;padding:12px 22px;border-radius:12px;color:var(--accent);font-weight:600;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+    a.btn.primary{background:var(--accent);color:#fff;border:0;box-shadow:0 6px 14px rgba(21,96,255,0.12)}
+
+    /* fixed footer */
+    footer.app-footer{
+      position:fixed;left:0;right:0;bottom:0;height:var(--footer-h);
+      display:flex;align-items:center;padding:10px 14px;background:linear-gradient(180deg, rgba(255,255,255,0.9), rgba(255,255,255,0.98));
+      box-shadow:0 -6px 18px rgba(16,24,40,0.06);gap:12px;z-index:1000;padding-bottom:calc(env(safe-area-inset-bottom) + 10px)
+    }
+    footer .nav-left{font-weight:700;color:#0f172a}
+    footer .nav-center{margin-left:auto;margin-right:auto;display:flex;gap:12px}
+    footer .nav-right{margin-left:auto}
+    footer .btn-footer{padding:12px 28px;border-radius:14px;border:1px solid rgba(21,96,255,0.14);background:#fff;color:var(--accent);font-weight:700;text-decoration:none}
+    footer .btn-footer.primary{background:var(--accent);color:#fff;border:0}
+
+    /* responsive tweaks */
+    @media(min-width:720px){ main.content{padding-left:28px;padding-right:28px} }
+  </style>
 </head>
 <body>
 
-  <!-- TOP BAR -->
-  <header class="topbar" role="banner">
-    <div class="left">
-      <div class="avatar">🌅</div>
-      <div class="greet">
-        <div class="hello">Selamat sore!</div>
-        <div class="name">Pengunjung</div>
-      </div>
+  <!-- Header (fixed) -->
+  <header class="app-header" role="banner">
+    <div class="logo-wrap" aria-hidden="true">
+      <!-- Upload /assets/logo.png to PAGES_KV --> 
+      <img src="/assets/logo.png" alt="logo">
     </div>
-    <div style="margin-left:auto; display:flex; align-items:center; gap:12px;">
-      <!-- small icon -->
-      <div style="width:44px;height:44px;border-radius:44px;background:#fff;padding:6px;display:flex;align-items:center;justify-content:center;">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#ef4444" stroke-width="1.2"/></svg>
-      </div>
+    <div class="title">
+      <div class="small">Selamat datang!</div>
+      <div class="big">Pengunjung</div>
+    </div>
+    <div class="right">
+      <div class="icon-circle" title="Profil"></div>
     </div>
   </header>
 
-  <!-- PAGE CONTENT (in between) -->
-  <main class="content-wrap" role="main">
-    <div class="container">
+  <div class="spacer-top" aria-hidden="true"></div>
 
-      <div class="card" style="text-align:left;">
-        <!-- banner image: upload to /img/banner.png or change src -->
-        <img class="banner" src="/img/banner.png" alt="Banner">
-        <h1>Selamat datang</h1>
-        <p class="lead">Halaman contoh yang responsive. Scroll konten ini — header & footer tetap di tempat.</p>
-
-        <!-- example quick links -->
-        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:6px;">
-          <a class="btn ghost" href="/register">Daftar</a>
-          <a class="btn ghost" href="/login">Login</a>
-          <!-- admin link only visible if you know URL -->
-          <a class="btn ghost" href="/admin">Admin</a>
-        </div>
+  <!-- Main scrollable content -->
+  <main class="content" role="main">
+    <section class="card" aria-labelledby="hero-title">
+      <div class="banner" role="img" aria-label="Banner">
+        <!-- Upload /assets/banner.jpg ke KV dan ganti src bila perlu -->
+        <img src="/assets/banner.jpg" alt="Banner">
       </div>
 
-      <!-- additional sample content to show scrolling -->
-      <div class="card">
-        <h2>Fitur</h2>
-        <p class="lead">Tambahkan konten lain di sini. Area ini akan menggulung jika panjang, header/footer tetap diam.</p>
-      </div>
+      <h1 id="hero-title">Selamat datang</h1>
+      <p class="lead">Halaman contoh yang responsive. Konten ini bergulir, header & footer tetap di tempat.</p>
 
-    </div>
+      <div class="btn-row" aria-hidden="false">
+        <a class="btn" href="/register">Daftar</a>
+        <a class="btn" href="/login">Login</a>
+        <!-- jika mau hilangkan tombol Admin, hapus baris ini -->
+        <a class="btn" href="/admin">Admin</a>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="features-title">
+      <h2 id="features-title">Fitur</h2>
+      <p class="lead">Tambahkan konten lain di sini. Area ini akan menggulung jika panjang, tapi header/footer tetap diam.</p>
+    </section>
+
+    <!-- Tambahkan lebih banyak section sesuai kebutuhan -->
   </main>
 
-  <!-- BOTTOM BAR -->
-  <nav class="bottombar" role="navigation" aria-label="Footer actions">
-    <div style="display:flex; align-items:center; gap:12px;">
-      <div style="font-weight:700; color:#111;">Home</div>
+  <!-- Footer (fixed) -->
+  <footer class="app-footer" role="contentinfo">
+    <div class="nav-left">Home</div>
+    <div class="nav-center">
+      <a class="btn-footer" href="/"><span>Beranda</span></a>
+      <a class="btn-footer primary" href="/login">Login</a>
+      <a class="btn-footer" href="/register">Daftar</a>
     </div>
-
-    <div class="actions" style="margin-left:auto;">
-      <!-- put login/register into bottom bar -->
-      <a class="btn" href="/login">Login</a>
-      <a class="btn ghost" href="/register">Daftar</a>
-    </div>
-  </nav>
+    <div class="nav-right"></div>
+  </footer>
 
 </body>
 </html>
