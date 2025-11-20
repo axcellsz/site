@@ -2,154 +2,242 @@
 <html lang="id">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>Beranda — Contoh App</title>
+
+<!-- Simple reset + system font -->
 <style>
   :root{
-    --bg:#f3f5f7;
+    --bg:#f2f4f7;
     --card:#ffffff;
-    --muted:#7a8794;
-    --accent1:#ff7a29; /* orange */
-    --accent-grad: linear-gradient(90deg,#ff7a29,#ff4b2b);
-    --pill-shadow: 0 8px 24px rgba(12,24,48,0.08);
+    --muted:#6b7280;
+    --text:#0b1320;
+    --accent:#ff6b1a; /* orange main */
+    --accent-ghost: rgba(255,107,26,0.08);
     --radius:14px;
-    --gap:14px;
-    --footer-height:64px;
-    --header-height:64px;
-    --safe-bottom: env(safe-area-inset-bottom, 8px);
+    --small-btn-padding:8px 18px;
+    --small-font:14px;
+    --header-h:64px;
+    --footer-h:74px;
   }
 
-  html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;}
-  body{background:var(--bg); color:#071228; -webkit-font-smoothing:antialiased;}
+  html,body{
+    height:100%;
+    margin:0;
+    font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    background:var(--bg);
+    color:var(--text);
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+  }
 
-/* header (short) */
+  /* fixed header */
   header.app-header{
-    position:fixed;left:0;right:0;top:0;height:var(--header-height);
-    display:flex;align-items:center;gap:12px;padding:10px 14px;
-    background:var(--accent-grad); color:#fff; z-index:60;
-    box-shadow:0 6px 20px rgba(13,22,35,0.08);
+    position:fixed;
+    left:0;right:0;top:0;
+    height:var(--header-h);
+    display:flex;
+    align-items:center;
+    gap:12px;
+    padding:12px 16px;
+    box-sizing:border-box;
+    z-index:40;
+    /* gradient like Shopee/Dana style but orange */
+    background:linear-gradient(90deg,#ff7b3b 0%, #ff4f2d 100%);
+    color:#fff;
+    box-shadow:0 6px 18px rgba(8,15,25,0.06);
   }
-  .logo-box{width:46px;height:46px;border-radius:10px;background:rgba(255,255,255,0.14);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px}
-  .hello{line-height:1}
-  .hello small{display:block;opacity:0.95;font-size:12px}
-  .hello strong{display:block;font-size:16px;margin-top:2px}
+  .app-header .logo{
+    width:44px;height:44px;border-radius:10px;
+    background:rgba(255,255,255,0.12);
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:18px;
+  }
+  .app-header .greet{
+    line-height:1;
+  }
+  .app-header .greet small{ display:block; font-size:12px; opacity:0.95; }
+  .app-header .greet strong{ display:block; font-size:18px; font-weight:800; margin-top:2px; }
 
-/* main area between header & footer */
+  /* main area sits between header & footer */
   main.app-main{
-    position:fixed; left:0; right:0; top:var(--header-height); bottom:var(--footer-height);
-    overflow:auto; -webkit-overflow-scrolling:touch; padding:18px; box-sizing:border-box;
+    /* push content below header and above footer */
+    padding-top: calc(var(--header-h) + 18px);
+    padding-bottom: calc(var(--footer-h) + 18px);
+    max-width:760px;
+    margin:0 auto;
+  }
+  .container{
+    padding: 18px 16px;
+    box-sizing:border-box;
   }
 
-/* cards */
-  .card{background:var(--card);border-radius:16px;padding:16px;box-shadow:var(--pill-shadow);margin-bottom:16px}
-  .banner{height:120px;border-radius:10px;overflow:hidden;background:linear-gradient(90deg,#3ac1ff,#17b89c);display:flex;align-items:center;padding:12px;color:#fff}
+  /* card */
+  .card{
+    background:var(--card);
+    border-radius: var(--radius);
+    padding:20px;
+    margin: 18px 12px;
+    box-shadow: 0 8px 20px rgba(11,19,32,0.05);
+  }
 
-/* hero */
-  h1.hero{font-size:28px;margin:16px 0 8px}
-  p.lead{color:var(--muted);line-height:1.6;margin:0 0 14px}
+  /* banner (rounded gradient, responsive) */
+  .banner{
+    width:100%;
+    height:130px;
+    border-radius:12px;
+    background: linear-gradient(90deg,#19c6d7,#1fb8a6);
+    display:block;
+    box-shadow: inset 0 -18px 40px rgba(255,255,255,0.06);
+    margin-bottom:16px;
+    overflow:hidden;
+  }
+  .banner img{ width:100%; height:100%; object-fit:cover; display:block; }
 
-/* buttons */
-  .action-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:8px}
-  .btn{display:inline-flex;align-items:center;justify-content:center;padding:10px 16px;border-radius:12px;background:#fff;border:1px solid rgba(12,22,35,0.06);min-width:110px;font-weight:700;color:var(--accent1);text-decoration:none}
-  .btn.primary{background:var(--accent1);color:#fff;border:0}
-  .btn.ghost{background:transparent;border:1px solid rgba(12,22,35,0.06);color:#0b3c6b}
+  h1{ font-size:32px; margin:6px 0 8px; font-weight:800; letter-spacing:-0.6px; }
+  p.lead{ color:var(--muted); line-height:1.6; margin:0 0 16px; }
 
-/* voucher row */
-  .voucher-row{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px}
-  .voucher{min-width:230px;border-radius:12px;padding:10px;background:linear-gradient(90deg,#ffd498,#ffe3c7);display:flex;align-items:center;justify-content:space-between}
+  /* small buttons style (compact) */
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding: var(--small-btn-padding);
+    border-radius:10px;
+    background: #fff;
+    border:1px solid rgba(12,22,35,0.06);
+    min-width:86px;
+    font-weight:700;
+    font-size:var(--small-font);
+    color:var(--accent);
+    text-decoration:none;
+    margin:6px 8px 6px 0;
+    box-shadow:0 6px 18px rgba(11,19,32,0.04);
+  }
+  .btn.ghost{
+    background:var(--card); color:var(--accent); border:1px solid rgba(255,107,26,0.14);
+  }
+  .btn.primary{
+    background: linear-gradient(180deg,var(--accent), #ff5a00);
+    color:#fff;
+    border:0;
+    box-shadow: 0 8px 20px rgba(255,91,25,0.20);
+  }
 
-/* footer (short & clean) */
+  /* footer fixed */
   footer.app-footer{
-    position:fixed;left:0;right:0;bottom:0;height:var(--footer-height);
-    display:flex;align-items:center;justify-content:center;padding:10px 14px;
-    background:rgba(255,255,255,0.98);box-shadow:0 -8px 24px rgba(9,14,20,0.06);z-index:70;
-    padding-bottom: calc(var(--safe-bottom) + 8px);
+    position:fixed;
+    left:0;right:0;bottom:0;
+    height:var(--footer-h);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:40;
+    background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,255,255,0.99));
+    box-shadow: 0 -10px 24px rgba(11,19,32,0.06);
+    padding:10px 18px;
+    box-sizing:border-box;
   }
-  .footer-inner{width:100%;max-width:880px;display:flex;gap:12px;align-items:center;justify-content:center}
-  .footer-inner .btn{flex:0 0 46%;min-width:0;padding:12px 10px;border-radius:12px;font-size:16px}
-  .footer-inner .btn.primary{background:var(--accent1);color:#fff}
-  .footer-inner .btn.secondary{background:#fff;border:1px solid rgba(12,22,35,0.05);color:var(--accent1)}
-
-/* ensure content not hidden under footer on very short screens */
-  .spacer{height:10px}
-
-/* responsiveness */
-  @media (min-width:680px){
-    main.app-main{padding:26px}
-    h1.hero{font-size:36px}
+  .footer-inner{
+    width:100%;
+    max-width:760px;
+    display:flex;
+    gap:12px;
+    align-items:center;
+    justify-content:center;
   }
+  /* compact footer buttons */
+  .footer-inner .btn{ padding:8px 20px; min-width:120px; border-radius:30px; font-size:15px; }
+  .footer-inner .btn.small{ min-width:90px; padding:8px 14px; font-size:14px; border-radius:16px; }
+  .footer-inner .btn.ghost{ background:transparent; box-shadow:none; border:0; color:var(--muted); }
+
+  /* responsive tweaks */
+  @media (min-width:600px){
+    :root{ --header-h:72px; --footer-h:84px; }
+    .banner{ height:160px; }
+    .card{ margin:24px auto; max-width:680px; }
+  }
+
+  /* ensure content area can scroll smoothly under fixed bars on mobile */
+  main.app-main > .container > .spacer{ height:12px; }
+
+  /* small utility */
+  .text-muted{ color:var(--muted); font-size:14px; }
 </style>
 </head>
 <body>
 
+<!-- HEADER -->
 <header class="app-header" role="banner" aria-label="Header aplikasi">
-  <div style="display:flex;align-items:center;gap:12px">
-    <div class="logo-box" aria-hidden="true">
-      <!-- small logo - ganti sesuai kebutuhan -->
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="rgba(255,255,255,0.16)"/><path d="M7 8h10v2H7zM7 12h10v2H7z" fill="#fff"/></svg>
-    </div>
-    <div class="hello">
-      <small>Selamat datang</small>
-      <strong id="hello-name">Pengunjung</strong>
-    </div>
+  <div class="logo" aria-hidden="true">logo</div>
+  <div class="greet" style="flex:1;">
+    <small>Selamat datang</small>
+    <strong>Pengunjung</strong>
+  </div>
+  <!-- right circle (profile) -->
+  <div style="width:46px;height:46px;border-radius:999px;background:rgba(255,255,255,0.14);display:flex;align-items:center;justify-content:center;">
+    <!-- optional icon -->
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.2" stroke="rgba(255,255,255,0.9)" stroke-width="1.3"/>
+      <path d="M4 20c1.6-4 7.2-5 8-5s6.4 1 8 5" stroke="rgba(255,255,255,0.9)" stroke-width="1.3" stroke-linecap="round"/>
+    </svg>
   </div>
 </header>
 
+<!-- MAIN scrollable content (between header & footer) -->
 <main class="app-main" role="main">
-  <section class="card" aria-labelledby="hero-title">
-    <div class="banner" role="img" aria-label="Banner">
-      <div style="flex:1">
-        <div style="font-weight:800;font-size:18px">Voucher terbaik di dekat kamu</div>
-        <div style="font-weight:700;font-size:22px;margin-top:6px">Diskon hingga 70%</div>
+  <div class="container">
+
+    <section class="card" aria-labelledby="welcome-title">
+      <div class="banner" role="img" aria-label="Banner promosi">
+        <!-- You can replace with <img src="/images/banner.jpg"> or external URL -->
+        <!-- Placeholder gradient + text -->
+        <div style="width:100%;height:100%;display:flex;align-items:flex-start;justify-content:flex-start;padding:14px;color:white;font-weight:800;font-size:18px;">
+          Banner
+        </div>
       </div>
-      <div style="width:90px;height:64px;border-radius:8px;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;font-weight:800">PROMO</div>
-    </div>
 
-    <h1 class="hero" id="hero-title">Selamat datang</h1>
-    <p class="lead">Halaman contoh responsif. Konten ini bergulir di tengah — header & footer tetap diam.</p>
+      <h1 id="welcome-title">Selamat datang</h1>
+      <p class="lead">Halaman contoh yang responsif. Konten ini bergulir di tengah — header & footer tetap diam.</p>
 
-    <div class="action-row">
-      <a class="btn secondary" href="/register">Daftar</a>
-      <a class="btn primary" href="/login">Login</a>
-    </div>
-  </section>
+      <!-- action buttons (small) -->
+      <div>
+        <a class="btn ghost" href="/register">Daftar</a>
+        <a class="btn primary" href="/login">Login</a>
+        <!-- admin button (optional, remove if you don't want visible link) -->
+        <!-- <a class="btn ghost" href="/admin">Admin</a> -->
+      </div>
+    </section>
 
-  <section class="card" aria-labelledby="voucher-title">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-      <h3 id="voucher-title" style="margin:0;font-size:16px">Voucher dan Kartu Perdana</h3>
-      <a href="#" style="font-size:13px;color:var(--accent1);text-decoration:none;font-weight:700">LIHAT SEMUA</a>
-    </div>
-    <div class="voucher-row" aria-hidden="false">
-      <div class="voucher" role="article"><div style="font-weight:700">GOGOGO</div><div class="price">Rp5.000</div></div>
-      <div class="voucher" style="background:linear-gradient(90deg,#b6ecff,#7ad0ff)"><div style="font-weight:700">MLBB</div><div class="price">Rp30.000</div></div>
-    </div>
-  </section>
+    <!-- Example feature card -->
+    <section class="card" aria-labelledby="fitur-title">
+      <h2 id="fitur-title" style="margin-top:0;font-size:22px;">Fitur</h2>
+      <p class="text-muted">Tambahkan konten lain di sini. Area ini akan menggulung jika panjang, header/footer tetap diam.</p>
 
-  <section class="card" aria-labelledby="news-title">
-    <h3 id="news-title" style="margin:0 0 8px;font-size:16px">Terbaru Untukmu</h3>
-    <div class="list-item"><div style="width:40px;height:40px;border-radius:8px;background:#e8f6ff;display:flex;align-items:center;justify-content:center">🛡️</div><div><div style="font-weight:700">Jaminan Anti Penipuan</div><div style="color:var(--muted);font-size:13px">#AmanDariBadman</div></div></div>
-    <div class="list-item"><div style="width:40px;height:40px;border-radius:8px;background:#fff3e8;display:flex;align-items:center;justify-content:center">🚚</div><div><div style="font-weight:700">Posko Bantuan Keliling</div><div style="color:var(--muted);font-size:13px">Nikmati layanan prioritas</div></div></div>
-  </section>
+      <!-- small grid -->
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
+        <div style="flex:1 1 40%; min-width:120px; background:var(--accent-ghost); border-radius:12px; padding:12px;">
+          <strong style="color:var(--accent);">Pulsa</strong>
+        </div>
+        <div style="flex:1 1 40%; min-width:120px; background:var(--accent-ghost); border-radius:12px; padding:12px;">
+          <strong style="color:var(--accent);">Paket Internet</strong>
+        </div>
+      </div>
+    </section>
 
-  <div style="height:12px"></div>
+    <div class="spacer"></div>
+
+  </div>
 </main>
 
-<footer class="app-footer" role="contentinfo" aria-label="Footer">
+<!-- FOOTER fixed -->
+<footer class="app-footer" role="contentinfo">
   <div class="footer-inner">
-    <a class="btn secondary" href="/register">Daftar</a>
-    <a class="btn primary" href="/login" style="margin-left:6px">Login</a>
+    <a class="btn ghost small" href="/" style="margin-right:auto;">Home</a>
+    <a class="btn primary" href="/login">Login</a>
+    <a class="btn ghost small" href="/register">Daftar</a>
   </div>
 </footer>
-
-<script>
-  // small demo: show stored displayName if available
-  (function(){
-    try{
-      const name = sessionStorage.getItem('displayName') || localStorage.getItem('displayName') || null;
-      if(name) document.getElementById('hello-name').textContent = name;
-    }catch(e){}
-  })();
-</script>
 
 </body>
 </html>
